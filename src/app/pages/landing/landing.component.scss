@@ -1,0 +1,737 @@
+/* Impact modal styles */
+.main-app-header {
+  display: grid;
+  grid-template-columns: auto 1fr auto;
+  align-items: center;
+  padding: 16px 24px;
+  background-color: white;
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+  gap: 24px;
+  
+  h1 {
+    margin: 0;
+    font-size: 24px;
+    color: #333;
+    text-align: center;
+    grid-column: 2;
+  }
+
+  app-profile-menu {
+    grid-column: 3;
+    margin-right: 48px;
+  }
+}
+
+/* Backdrop for modals - cover whole viewport and sit above app UI */
+.impact-modal-backdrop {
+  position: fixed;
+  inset: 0; /* cover viewport */
+  background-color: rgba(0, 0, 0, 0.55);
+  z-index: 5000; /* highest overlay for modals */
+  display: flex;
+  align-items: center;
+  justify-content: center; /* center modal in viewport */
+}
+
+.impact-modal {
+  position: fixed;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  background: white;
+  border-radius: 12px;
+  box-shadow: 0 24px 64px rgba(2,6,23,0.32);
+  width: 90vw;
+  max-width: 1200px;
+  max-height: 90vh;
+  z-index: 5001; /* ensure above backdrop and other UI layers */
+  display: flex;
+  flex-direction: column;
+  overflow: hidden; /* content area will scroll */
+}
+
+.impact-modal-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 16px 20px;
+  border-bottom: 1px solid rgba(0,0,0,0.06);
+  background: transparent;
+
+  span { font-size: 1.05rem; font-weight: 600; }
+
+  .close-modal-btn {
+    background: none;
+    border: none;
+    font-size: 1.5rem;
+    cursor: pointer;
+    padding: 0;
+    width: 36px;
+    height: 36px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: 6px;
+    transition: background .12s ease;
+    &:hover { background: #f6f6f6; }
+  }
+}
+
+.editor-actions {
+  padding: 16px 24px;
+  display: flex;
+  gap: 16px;
+  align-items: center;
+  background-color: #f8f9fa;
+  border-bottom: 1px solid #dee2e6;
+  
+  button {
+    padding: 8px 16px;
+    border: 1px solid #dee2e6;
+    background: white;
+    border-radius: 4px;
+    cursor: pointer;
+    transition: all 0.2s;
+    font-size: 14px;
+    
+    &:hover {
+      background: #f8f9fa;
+      border-color: #ced4da;
+    }
+    
+    &:disabled {
+      opacity: 0.6;
+      cursor: not-allowed;
+    }
+  }
+
+  .editor-toggle {
+    margin-left: 12px;
+  }
+
+  .check-impact-btn {
+    background-color: #007bff;
+    color: white;
+    border-color: #0056b3;
+    margin-left: auto;
+    
+    &:hover:not(:disabled) {
+      background-color: #0056b3;
+      border-color: #004085;
+    }
+    
+    &:disabled {
+      background-color: #007bff;
+      opacity: 0.65;
+    }
+  }
+
+  .analyze-impact-btn {
+    padding: 8px 14px;
+    border: 1px solid rgba(0,0,0,0.06);
+    background: #fff9db; /* pale yellow */
+    border-radius: 4px;
+    cursor: pointer;
+    font-size: 14px;
+    color: #2b2b2b;
+    display: inline-flex;
+    align-items: center;
+
+    &:hover {
+      background: #fff2a8; /* slightly darker pale yellow */
+    }
+    &.active, &.selected {
+      box-shadow: 0 0 0 3px rgba(255, 249, 219, 0.6);
+      border-color: #ffd54f;
+    }
+    &:disabled {
+      opacity: 0.5;
+      cursor: not-allowed;
+      background: #fff9db; /* keep pale look but muted */
+      filter: grayscale(0.2);
+    }
+  }
+
+  .after-analyze-btn {
+    background-color: #d9534f; /* bootstrap danger red */
+    color: white;
+    border-color: darken(#d9534f, 10%);
+    padding: 8px 14px;
+    border-radius: 4px;
+    cursor: pointer;
+    font-weight: 600;
+
+    &:hover:not(:disabled) {
+      background-color: #c9302c;
+    }
+
+    &:disabled {
+      opacity: 0.55;
+      cursor: not-allowed;
+      filter: grayscale(0.2);
+      background-color: #d9534f;
+    }
+  }
+
+  
+  .after-analyze-backdrop {
+    position: fixed;
+    inset: 0;
+    z-index: 3450;
+    background: rgba(0,0,0,0.45);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 24px;
+    backdrop-filter: blur(4px);
+  }
+
+  .after-analyze-popup {
+    background: linear-gradient(180deg, #ffffff 0%, #fbfbfd 100%);
+    border-radius: 12px;
+    padding: 20px 22px;
+    box-shadow: 0 20px 50px rgba(2,6,23,0.35);
+    /* sit above centered backdrop */
+    z-index: 3500;
+    width: 680px;
+    max-width: calc(100vw - 48px);
+    max-height: calc(100vh - 80px);
+    box-sizing: border-box;
+    display: grid;
+    grid-template-columns: 1fr;
+    gap: 12px;
+    align-items: start;
+    animation: popIn 180ms ease-in-out;
+    overflow: auto; /* ensure content fits and scrolls */
+  }
+
+  @keyframes popIn {
+    from { transform: translateY(-8px) scale(0.995); opacity: 0; }
+    to { transform: translateY(0) scale(1); opacity: 1; }
+  }
+
+  .after-analyze-popup .popup-text {
+    font-size: 15px;
+    color: #111827;
+    font-weight: 600;
+  }
+
+  .after-analyze-popup .popup-actions {
+    display: flex;
+    gap: 12px;
+    justify-content: flex-end;
+    margin-top: 4px;
+  }
+
+  .after-analyze-popup .run-btn {
+    background: linear-gradient(180deg,#e55347 0%,#d43e33 100%);
+    color: white;
+    border: none;
+    padding: 8px 14px;
+    border-radius: 8px;
+    cursor: pointer;
+    font-weight: 700;
+    box-shadow: 0 6px 18px rgba(212,62,51,0.18);
+    transition: transform .12s ease, box-shadow .12s ease, opacity .12s ease;
+  }
+
+  .after-analyze-popup .download-btn {
+    background: linear-gradient(180deg,#2b6cb0 0%,#2c5282 100%);
+    color: white;
+    border: none;
+    padding: 8px 12px;
+    border-radius: 8px;
+    cursor: pointer;
+    font-weight: 700;
+    margin-right: 8px;
+    box-shadow: 0 6px 18px rgba(43,108,176,0.14);
+  }
+
+.impact-modal-header .download-btn {
+  background: linear-gradient(180deg,#2b6cb0 0%,#2c5282 100%);
+  color: white;
+  border: none;
+  padding: 6px 10px;
+  border-radius: 6px;
+  cursor: pointer;
+  font-weight: 600;
+  box-shadow: 0 6px 14px rgba(43,108,176,0.12);
+}
+
+.after-analyze-popup .download-html-btn,
+.impact-modal-header .download-html-btn {
+  background: linear-gradient(180deg,#805ad5 0%,#6b46c1 100%);
+  color: white;
+  border: none;
+  padding: 8px 12px;
+  border-radius: 8px;
+  cursor: pointer;
+  font-weight: 700;
+  margin-right: 8px;
+  box-shadow: 0 6px 18px rgba(128,90,213,0.12);
+}
+
+.impact-modal-header .download-svg-btn {
+  background: linear-gradient(180deg,#16a34a 0%,#15803d 100%);
+  color: white;
+  border: none;
+  padding: 6px 10px;
+  border-radius: 6px;
+  cursor: pointer;
+  font-weight: 600;
+  box-shadow: 0 6px 14px rgba(16,163,82,0.12);
+}
+
+  .after-analyze-popup .run-btn:hover:not(:disabled) {
+    transform: translateY(-2px);
+    box-shadow: 0 10px 24px rgba(212,62,51,0.22);
+  }
+
+  .after-analyze-popup .close-btn {
+    background: transparent;
+    border: 1px solid rgba(15,23,42,0.06);
+    padding: 8px 12px;
+    border-radius: 8px;
+    cursor: pointer;
+    color: #374151;
+  }
+
+  .after-analyze-input {
+    width: 100%;
+    border: 1px solid rgba(15,23,42,0.06);
+    padding: 12px;
+    border-radius: 8px;
+    font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, 'Roboto Mono', 'Courier New', monospace;
+    font-size: 13px;
+    resize: vertical;
+    background: linear-gradient(180deg,#ffffff,#fbfbfd);
+    box-shadow: inset 0 1px 0 rgba(255,255,255,0.6);
+  }
+
+  .after-analyze-response .response-pre {
+    max-height: 260px;
+    overflow: auto;
+    background: #0f172a0a; /* subtle */
+    padding: 12px;
+    border-radius: 8px;
+    border: 1px solid rgba(15,23,42,0.03);
+    font-size: 13px;
+  }
+
+  /* toast */
+  .after-analyze-toast {
+    position: fixed;
+    top: 24px;
+    right: 24px;
+    background: linear-gradient(180deg,#10b981 0%,#059669 100%);
+    color: white;
+    padding: 10px 14px;
+    border-radius: 8px;
+    box-shadow: 0 8px 28px rgba(4,120,87,0.2);
+    z-index: 4000;
+    font-weight: 600;
+    animation: toastIn .18s ease;
+  }
+
+  @keyframes toastIn {
+    from { transform: translateY(-6px) scale(.995); opacity: 0; }
+    to { transform: translateY(0) scale(1); opacity: 1; }
+  }
+}
+
+.checkbox-label {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.dropdown-actions {
+  display: flex;
+  gap: 8px;
+  padding: 8px 12px;
+  justify-content: flex-end;
+}
+
+/* Popup-mode dropdown positioning */
+.custom-select {
+  position: relative;
+}
+
+.select-options {
+  position: absolute;
+  top: calc(100% + 8px);
+  left: 0;
+  min-width: 240px;
+  max-width: 320px;
+  background: white;
+  border: 1px solid rgba(0,0,0,0.08);
+  box-shadow: 0 6px 18px rgba(0,0,0,0.12);
+  border-radius: 6px;
+  z-index: 1200;
+  padding: 8px 0;
+}
+
+.select-options .option-item {
+  padding: 8px 12px;
+  cursor: pointer;
+}
+
+.select-options .option-item:hover {
+  background: #f6f6f6;
+}
+
+.apply-btn {
+  padding: 6px 10px;
+  background: var(--primary, #007bff);
+  color: white;
+  border: none;
+  border-radius: 4px;
+}
+
+.cancel-btn {
+  padding: 6px 10px;
+  background: transparent;
+  border: 1px solid rgba(0,0,0,0.06);
+  color: var(--text, #333);
+  border-radius: 4px;
+}
+
+.editor-content {
+  flex: 1;
+  overflow: auto;
+  
+  &.readonly {
+    background-color: #f8f9fa;
+    
+    .file-editor, textarea {
+      background-color: #f8f9fa;
+      color: #6c757d;
+      cursor: default;
+      
+      &:focus {
+        outline: none;
+      }
+    }
+  }
+
+  .file-editor, textarea {
+    width: 100%;
+    height: 100%;
+    border: none;
+    padding: 16px;
+    font-family: monospace;
+    font-size: 14px;
+    line-height: 1.5;
+    resize: none;
+    
+    &[readonly] {
+      background-color: #f8f9fa;
+      color: #6c757d;
+      cursor: default;
+      
+      &:focus {
+        outline: none;
+      }
+    }
+  }
+}
+
+.impact-modal-content {
+  flex: 1 1 auto;
+  overflow: auto; /* allow full scrolling of large content */
+  padding: 18px 20px;
+  -webkit-overflow-scrolling: touch;
+}
+.impact-modal-grid {
+  display: grid;
+  grid-template-columns: 1fr minmax(280px, 360px);
+  gap: 12px;
+  align-items: start;
+}
+
+.impact-viz {
+  min-height: 420px; /* reserve a bit more vertical room by default */
+  background: transparent;
+  width: 100%;
+}
+
+.impact-json {
+  background: var(--panel-surface, #f7f7f9);
+  border-radius: 4px;
+
+/* Analyze response tree styles */
+.analyze-tree {
+  max-height: 60vh;
+  overflow: auto;
+  font-family: monospace;
+}
+.analyze-tree .tree-root {
+  list-style: none;
+  margin: 0;
+  padding-left: 12px;
+}
+.analyze-tree .tree-root li {
+  margin: 2px 0;
+}
+.analyze-tree .analyze-node-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.analyze-tree .node-toggle {
+  background: transparent;
+  border: none;
+  cursor: pointer;
+  width: 20px;
+  text-align: center;
+  color: var(--muted, #6b7280);
+}
+.analyze-tree .node-name {
+  display: inline-block;
+  padding: 2px 6px;
+  border-radius: 6px;
+  transition: background-color .18s ease, color .18s ease, transform .18s ease;
+}
+.analyze-tree li.folder > .analyze-node-row .node-name {
+  color: var(--folder-text, #f97316); /* orange for folder names */
+  background: transparent;
+}
+.analyze-tree li.file > .analyze-node-row .node-name {
+  color: var(--file-text, #fbbf24); /* yellow for file names */
+  background: transparent;
+}
+/* changed file visual (accent background, darker text for contrast) */
+.analyze-tree li.file.changed > .analyze-node-row .node-name {
+  background: #fef3c7; /* light yellow */
+  color: #92400e; /* dark orange */
+  animation: highlightPulse 800ms ease-in-out;
+}
+.analyze-tree .node-count {
+  color: var(--muted, #6b7280);
+  font-size: 12px;
+}
+
+@keyframes highlightPulse {
+  0% { transform: scale(0.98); box-shadow: 0 0 0 rgba(217,83,79,0); }
+  50% { transform: scale(1.02); box-shadow: 0 6px 18px rgba(217,83,79,0.12); }
+  100% { transform: scale(1); box-shadow: 0 0 0 rgba(217,83,79,0); }
+}
+
+/* icons and color variants */
+.analyze-tree .node-icon {
+  width: 18px;
+  display: inline-block;
+  text-align: center;
+  margin-right: 6px;
+}
+.analyze-tree li.folder > .analyze-node-row .node-icon {
+  color: var(--folder-color, #f59e0b); /* amber for folders */
+}
+.analyze-tree li.file > .analyze-node-row .node-icon {
+  color: var(--file-color, #fbbf24); /* yellow for files */
+}
+
+.modal-controls {
+  display: inline-flex;
+  gap: 8px;
+  margin-left: 12px;
+}
+.control-btn {
+  background: transparent;
+  border: 1px solid rgba(0,0,0,0.06);
+  padding: 4px 8px;
+  border-radius: 6px;
+  font-size: 12px;
+  cursor: pointer;
+}
+.modal-title-group {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+  padding: 8px;
+  box-shadow: inset 0 0 0 1px rgba(0,0,0,0.02);
+  max-height: 520px;
+  overflow: auto;
+}
+
+.impact-json .json-header {
+  font-weight: 600;
+  margin-bottom: 8px;
+}
+
+.json-pre {
+  white-space: pre-wrap;
+  word-break: break-word;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, 'Roboto Mono', 'Courier New', monospace;
+  font-size: 12px;
+  margin: 0;
+  color: var(--text-color, #111);
+}
+
+.ui-click-blocker {
+  position: fixed;
+  inset: 0;
+  z-index: 3000;
+  background: transparent;
+  cursor: wait;
+}
+
+/* After Analyze popup (global selectors) - ensure popup centers regardless of markup location */
+.after-analyze-backdrop {
+  position: fixed;
+  inset: 0;
+  /* under modals but above normal UI */
+  z-index: 3450;
+  background: rgba(0,0,0,0.45);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+  backdrop-filter: blur(4px);
+}
+
+.after-analyze-popup {
+  background: linear-gradient(180deg, #ffffff 0%, #fbfbfd 100%);
+  border-radius: 12px;
+  padding: 20px 22px;
+  box-shadow: 0 20px 50px rgba(2,6,23,0.35);
+  /* sit above centered backdrop */
+  z-index: 3500;
+  width: 680px;
+  max-width: calc(100vw - 48px);
+  max-height: calc(100vh - 80px);
+  box-sizing: border-box;
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 12px;
+  align-items: start;
+  animation: popIn 180ms ease-in-out;
+  overflow: auto; /* ensure content fits and scrolls */
+}
+
+/* anchored variant: position near the button; position set from component via ngStyle */
+.after-analyze-popup.anchored {
+  position: fixed;
+  width: 420px;
+  max-width: 90vw;
+  /* explicit top/left coordinates are used; do not apply translate transforms */
+  transform: none;
+  box-shadow: 0 12px 30px rgba(2,6,23,0.25);
+  border-radius: 10px;
+  /* ensure popup never exceeds viewport height */
+  max-height: calc(100vh - 24px);
+  overflow: auto;
+  z-index: 3500; /* be above main UI but below modals */
+}
+
+/* caret arrow pointing down to the button center */
+.after-analyze-popup.anchored {
+  --caret-left: 40px; /* default, overridden by ngStyle */
+}
+.after-analyze-popup.anchored::after {
+  content: '';
+  position: absolute;
+  left: var(--caret-left);
+  bottom: -8px;
+  transform: translateX(-50%);
+  width: 0;
+  height: 0;
+  border-left: 8px solid transparent;
+  border-right: 8px solid transparent;
+  border-top: 8px solid #fbfbfd; /* same as popup background */
+  filter: drop-shadow(0 2px 4px rgba(2,6,23,0.08));
+}
+
+/* when flipped (popup shown below the button), position caret at top and invert triangle */
+.after-analyze-popup.anchored.flipped::after {
+  bottom: auto;
+  top: -8px;
+  border-top: none;
+  border-bottom: 8px solid #fbfbfd;
+}
+
+@keyframes popIn {
+  from { transform: translateY(-8px) scale(0.995); opacity: 0; }
+  to { transform: translateY(0) scale(1); opacity: 1; }
+}
+
+.after-analyze-popup .popup-text {
+  font-size: 15px;
+  color: #111827;
+  font-weight: 600;
+}
+
+.after-analyze-popup .popup-actions {
+  display: flex;
+  gap: 12px;
+  justify-content: flex-end;
+  margin-top: 4px;
+}
+
+.after-analyze-popup .run-btn {
+  background: linear-gradient(180deg,#e55347 0%,#d43e33 100%);
+  color: white;
+  border: none;
+  padding: 8px 14px;
+  border-radius: 8px;
+  cursor: pointer;
+  font-weight: 700;
+  box-shadow: 0 6px 18px rgba(212,62,51,0.18);
+  transition: transform .12s ease, box-shadow .12s ease, opacity .12s ease;
+}
+
+.after-analyze-popup .run-btn:hover:not(:disabled) {
+  transform: translateY(-2px);
+  box-shadow: 0 10px 24px rgba(212,62,51,0.22);
+}
+
+.after-analyze-popup .close-btn {
+  background: transparent;
+  border: 1px solid rgba(15,23,42,0.06);
+  padding: 8px 12px;
+  border-radius: 8px;
+  cursor: pointer;
+  color: #374151;
+}
+
+.after-analyze-input {
+  width: 100%;
+  border: 1px solid rgba(15,23,42,0.06);
+  padding: 12px;
+  border-radius: 8px;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, 'Roboto Mono', 'Courier New', monospace;
+  font-size: 13px;
+  resize: vertical;
+  background: linear-gradient(180deg,#ffffff,#fbfbfd);
+  box-shadow: inset 0 1px 0 rgba(255,255,255,0.6);
+}
+
+.after-analyze-response .response-pre {
+  max-height: 260px;
+  overflow: auto;
+  background: #0f172a0a; /* subtle */
+  padding: 12px;
+  border-radius: 8px;
+  border: 1px solid rgba(15,23,42,0.03);
+  font-size: 13px;
+}
+
+.after-analyze-toast {
+  position: fixed;
+  top: 24px;
+  right: 24px;
+  background: linear-gradient(180deg,#10b981 0%,#059669 100%);
+  color: white;
+  padding: 10px 14px;
+  border-radius: 8px;
+  box-shadow: 0 8px 28px rgba(4,120,87,0.2);
+  z-index: 4000;
+  font-weight: 600;
+  animation: toastIn .18s ease;
+}
+
+@keyframes toastIn {
+  from { transform: translateY(-6px) scale(.995); opacity: 0; }
+  to { transform: translateY(0) scale(1); opacity: 1; }
+}
