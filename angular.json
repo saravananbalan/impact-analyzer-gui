@@ -63,13 +63,24 @@
           "builder": "@angular/build:dev-server",
           "configurations": {
             "production": {
-              "buildTarget": "hackathon-app:build:production"
+              "buildTarget": "hackathon-app:build:production",
+              "host": "0.0.0.0",
+              "port": 4200,
+              "allowedHosts": ["all"]
             },
             "development": {
-              "buildTarget": "hackathon-app:build:development"
+              "buildTarget": "hackathon-app:build:development",
+              "host": "0.0.0.0",
+              "port": 4200,
+              "allowedHosts": ["all"]
             }
           },
-          "defaultConfiguration": "development"
+          "defaultConfiguration": "development",
+          "options": {
+            "host": "0.0.0.0",
+            "port": 4200,
+            "allowedHosts": ["all"]
+          }
         },
         "extract-i18n": {
           "builder": "@angular/build:extract-i18n"

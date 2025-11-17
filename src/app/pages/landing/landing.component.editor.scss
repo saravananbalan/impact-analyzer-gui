@@ -1,0 +1,88 @@
+/* Editor and diff view styles */
+.editor-section {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  border: 1px solid #dee2e6;
+  margin: 0 24px 24px;
+  border-radius: 4px;
+  overflow: hidden;
+
+  &.split {
+    margin-bottom: 0;
+  }
+
+  &.left-pane {
+    margin-right: 12px;
+  }
+}
+
+.editor-content {
+  flex: 1;
+  overflow: auto;
+  background-color: white;
+  transition: background-color 0.2s;
+
+  &.readonly {
+    background-color: #f8f9fa;
+
+    textarea, .file-editor {
+      background-color: #f8f9fa;
+      color: #6c757d;
+      cursor: default;
+      
+      &:focus {
+        outline: none;
+        box-shadow: none;
+      }
+    }
+
+    .diff-panel {
+      background-color: #f8f9fa;
+      color: #6c757d;
+    }
+  }
+
+  textarea, .file-editor {
+    width: 100%;
+    height: 100%;
+    border: none;
+    padding: 16px;
+    font-family: 'Courier New', Courier, monospace;
+    font-size: 14px;
+    line-height: 1.5;
+    resize: none;
+    transition: all 0.2s;
+
+    &:focus {
+      outline: none;
+      box-shadow: inset 0 0 0 2px #007bff33;
+    }
+  }
+}
+
+.diff-panel {
+  padding: 16px;
+  font-family: 'Courier New', Courier, monospace;
+  line-height: 1.5;
+  
+  .diff-line {
+    margin: 0;
+    white-space: pre-wrap;
+    
+    &.diff-added {
+      background-color: #e6ffe6;
+      color: #1e7e34;
+    }
+    
+    &.diff-removed {
+      background-color: #ffe6e6;
+      color: #dc3545;
+    }
+    
+    &.diff-changed {
+      background-color: #fff3cd;
+      color: #856404;
+    }
+  }
+}
