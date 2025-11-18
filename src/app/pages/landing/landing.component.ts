@@ -258,11 +258,11 @@ import { ProfileMenuComponent } from '../../shared/components/profile-menu/profi
                       <app-impact-visualization [impactData]="impactResult" (nodeClick)="onImpactNodeClick($event)"></app-impact-visualization>
                     </div>
 
-                    <!-- Reasoning bullets displayed below the graph -->
-                    <div class="reasoning-panel-below" *ngIf="reasoningBulletsHtml && reasoningBulletsHtml.length">
+                    <!-- Reasoning bullets displayed below the graph (plain text, no styling) -->
+                    <div class="reasoning-panel-below" *ngIf="reasoningBullets && reasoningBullets.length">
                       <div class="panel-title">Reasoning</div>
                       <ol class="reason-list">
-                        <li *ngFor="let h of reasoningBulletsHtml" [innerHTML]="h"></li>
+                        <li *ngFor="let b of reasoningBullets">{{ b }}</li>
                       </ol>
                     </div>
                   </div>
@@ -1197,20 +1197,112 @@ export class LandingComponent implements OnInit {
 
   public parseReasoningToBullets(text: string): string[] {
     if (!text) return [];
-    const lines = String(text).split(/\r?\n/).map(l => l.trim()).filter(l => l.length > 0);
-    if (lines.length >= 1 && lines.length <= 12) {
-      // assume already bullet-separated
-      return lines;
+    const t = String(text || '');
+    // normalize newlines
+    const normalized = t.replace(/\r\n?/g, '\n');
+
+    // Detect numbered sections like "1. ...", "2) ..." and split preserving the numbering
+    const hasNumbered = /(^|\n)\s*\d+[\.|\)]/.test(normalized);
+    if (hasNumbered) {
+      // prepend newline to simplify split boundary at start
+      const pref = '\n' + normalized;
+      const parts = pref.split(/(?=\n\s*\d+[\.|\)])/g)
+        .map(p => p.replace(/^\n/, '').trim())
+        .filter(p => p.length > 0);
+      if (parts.length > 0) return parts;
     }
-    const sentences = String(text).split(/(?<=[\.!\?])\s+/).map(s => s.trim()).filter(s => s.length > 0);
-    return sentences.length > 0 ? sentences : [text.trim()];
+
+    // If there's a bullet-list style with leading dashes or asterisks, split by lines
+    const lines = normalized.split('\n').map(l => l.trim()).filter(l => l.length > 0);
+    const hasDashBullets = lines.some(l => /^[-*·]\s+/.test(l));
+    if (hasDashBullets && lines.length > 0) {
+      // merge contiguous dash blocks into bullets
+      const bullets: string[] = [];
+      let cur: string[] = [];
+      for (const ln of lines) {
+        if (/^[-*·]\s+/.test(ln)) {
+          if (cur.length) { bullets.push(cur.join(' ')); cur = []; }
+          bullets.push(ln.replace(/^[-*·]\s+/, '').trim());
+        } else {
+          // continuation line
+          if (bullets.length === 0) { cur.push(ln); }
+          else { bullets[bullets.length - 1] = bullets[bullets.length - 1] + ' ' + ln; }
+        }
+      }
+      if (cur.length) bullets.push(cur.join(' '));
+      if (bullets.length) return bullets;
+    }
+
+    // fallback: split into sentences (simple heuristic)
+    const sentences = normalized.split(/(?<=[\.!?])\s+/).map(s => s.trim()).filter(s => s.length > 0);
+    return sentences.length > 0 ? sentences : [t.trim()];
   }
 
+  // (intentionally left blank) previously had helper to strip numeric prefixes; reasoning should remain unchanged
+
   private highlightQuotesToHtml(text: string): SafeHtml {
+    // Return sanitized plain text (no HTML). Reasoning should remain as text only.
     if (!text) return this.sanitizer.bypassSecurityTrustHtml('');
-    // wrap single-quoted substrings in a span with class 'quote-highlight'
-    const replaced = String(text).replace(/'([^']+)'/g, "<span class=\"quote-highlight\">'$1'</span>");
-    return this.sanitizer.bypassSecurityTrustHtml(replaced);
+    const esc = String(text).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+    return this.sanitizer.bypassSecurityTrustHtml(esc);
+  }
+
+  // Serialize SVG but first clone it and inline computed styles so exported SVG/HTML matches rendered appearance
+  private serializeSvgWithInlineStyles(svgEl: SVGElement | null): string {
+    try {
+      if (!svgEl) return '';
+      // clone to avoid mutating the live DOM
+      const clone = svgEl.cloneNode(true) as SVGElement;
+      // Ensure width/height/viewBox are preserved
+      if (!clone.getAttribute('xmlns')) clone.setAttribute('xmlns', 'http://www.w3.org/2000/svg');
+
+      const originalEls = Array.from(svgEl.querySelectorAll('*')) as Element[];
+      const cloneEls = Array.from(clone.querySelectorAll('*')) as Element[];
+
+      // Properties to inline — keeps output compact but preserves visual fidelity for most SVGs
+      const props = [
+        'fill', 'stroke', 'stroke-width', 'stroke-linecap', 'stroke-linejoin', 'stroke-dasharray', 'stroke-opacity',
+        'fill-opacity', 'opacity', 'font-size', 'font-family', 'font-weight', 'text-anchor', 'dominant-baseline',
+        'color', 'display', 'visibility', 'transform', 'background-color'
+      ];
+
+      for (let i = 0; i < cloneEls.length; i++) {
+        const orig = originalEls[i];
+        const c = cloneEls[i];
+        if (!orig || !c) continue;
+        try {
+          const cs = window.getComputedStyle(orig as Element);
+          let styleText = c.getAttribute('style') || '';
+          for (const p of props) {
+            try {
+              const v = cs.getPropertyValue(p);
+              if (v && v !== 'none' && v !== 'normal' && v !== '0px') {
+                // Append property if not already present
+                if (!new RegExp(`${p}\\s*:`).test(styleText)) styleText += `${p}:${v};`;
+              }
+            } catch (e) { /* ignore property retrieval errors */ }
+          }
+          if (styleText) c.setAttribute('style', styleText);
+        } catch (e) {
+          // ignore per-node errors
+        }
+      }
+
+      const serializer = new XMLSerializer();
+      let svgString = serializer.serializeToString(clone);
+      if (!svgString.match(/xmlns="http:\/\/www\.w3\.org\/2000\/svg"/)) {
+        svgString = svgString.replace(/^<svg/, '<svg xmlns="http://www.w3.org/2000/svg"');
+      }
+      return svgString;
+    } catch (e) {
+      try {
+        // fallback to naive serialization
+        const serializer = new XMLSerializer();
+        return svgEl ? serializer.serializeToString(svgEl) : '';
+      } catch (er) {
+        return '';
+      }
+    }
   }
 
   private escapeHtml(s: string) {
@@ -1562,7 +1654,8 @@ export class LandingComponent implements OnInit {
             rawReasoning = '';
           }
           this.reasoningBullets = this.parseReasoningToBullets(String(rawReasoning || ''));
-          this.reasoningBulletsHtml = (this.reasoningBullets || []).map(b => this.highlightQuotesToHtml(b));
+          // keep reasoning as plain text (no inline styling or HTML)
+          this.reasoningBulletsHtml = [];
         } catch (e) {
           this.reasoningBullets = [];
           this.reasoningBulletsHtml = [];
@@ -1691,15 +1784,14 @@ export class LandingComponent implements OnInit {
         svgHtml = '';
       }
 
-      // build reasoning HTML from bullets, preserving highlighted single-quoted fragments
+      // build reasoning HTML from bullets as plain escaped text (no styling)
       let reasoningHtml = '';
       try {
         if (this.reasoningBullets && this.reasoningBullets.length) {
           const items = this.reasoningBullets.map(b => {
-            const esc = escapeHtml(String(b || ''));
-            // highlight single-quoted substrings (after escaping) by wrapping them in a span
-            const withQuotes = esc.replace(/'([^']+)'/g, "<span class=\"quote-highlight\">'$1'</span>");
-            return `<li>${withQuotes}</li>`;
+            const raw = String(b || '');
+            const esc = escapeHtml(raw);
+            return `<li>${esc}</li>`;
           }).join('');
           reasoningHtml = `<h2>Reasoning</h2><ol class="reason-list">${items}</ol>`;
         }
@@ -1722,7 +1814,7 @@ export class LandingComponent implements OnInit {
       const selectedFileName = this.selectedFile?.name ? escapeHtml(this.selectedFile.name) : '';
       const secondary = escapeHtml(String(this.secondaryContent ?? ''));
 
-      const body = `<!doctype html><html><head><meta charset="utf-8"><title>${title}</title><style>body{font-family:Arial,Helvetica,sans-serif;padding:20px;color:#111}pre{background:#f7f7f9;padding:12px;border-radius:6px;overflow:auto;max-height:60vh}h1,h2{color:#222}.viz-container{border:1px solid #e6e6ea;padding:12px;border-radius:6px;margin:8px 0;background:#fff}.quote-highlight{background: #fff3b0; padding:0 2px; border-radius:2px}.reason-list{padding-left:20px} .selected-impact .detail{margin-top:6px;white-space:pre-wrap}</style></head><body><h1>${title}</h1><p>Generated: ${ts}</p>`
+  const body = `<!doctype html><html><head><meta charset="utf-8"><title>${title}</title><style>body{font-family:Arial,Helvetica,sans-serif;padding:20px;color:#111}pre{background:#f7f7f9;padding:12px;border-radius:6px;overflow:auto;max-height:60vh}h1,h2{color:#222}.viz-container{border:1px solid #e6e6ea;padding:12px;border-radius:6px;margin:8px 0;background:#fff}.reason-list{padding-left:20px} .selected-impact .detail{margin-top:6px;white-space:pre-wrap}</style></head><body><h1>${title}</h1><p>Generated: ${ts}</p>`
         + (after ? `<h2>After-Analyze</h2><pre>${escapeHtml(JSON.stringify(after, null, 2))}</pre>` : '')
         + (selectedFileName ? `<h2>Selected File</h2><div>${selectedFileName}</div>` : '')
         + (secondary ? `<h2>Comparison / Secondary Content</h2><pre>${secondary}</pre>` : '')
@@ -1753,11 +1845,7 @@ export class LandingComponent implements OnInit {
         console.warn('No SVG visualization found to download');
         return;
       }
-      const serializer = new XMLSerializer();
-      let svgString = serializer.serializeToString(svgEl);
-      if (!svgString.match(/^<svg[^>]+xmlns="http/)) {
-        svgString = svgString.replace(/^<svg/, '<svg xmlns="http://www.w3.org/2000/svg"');
-      }
+      const svgString = this.serializeSvgWithInlineStyles(svgEl);
       const blob = new Blob([svgString], { type: 'image/svg+xml' });
       const url = URL.createObjectURL(blob);
       const a = document.createElement('a');
