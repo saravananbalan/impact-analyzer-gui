@@ -115,6 +115,7 @@ import { ProfileMenuComponent } from '../../shared/components/profile-menu/profi
                 </svg>
                 Sync
               </button>
+              <button type="button" class="undo-btn" (click)="undoCompareChange()" [disabled]="!canUndo" *ngIf="isSplitView" title="Undo last change in compare pane">Undo</button>
             </div>
             <button type="button" class="analyze-impact-btn" (click)="startAnalyze(); $event.stopPropagation()" [class.active]="analyzePending || selectedRepoIds.size > 0" [disabled]="!canAnalyze" [hidden]="isSplitView">
               <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" style="margin-right:6px; vertical-align:text-bottom;">
@@ -298,9 +299,9 @@ import { ProfileMenuComponent } from '../../shared/components/profile-menu/profi
                 <span>Compare</span>
               </div>
               <div class="editor-content" [class.readonly]="!isSplitView">
-                <textarea class="file-editor" 
-                         [(ngModel)]="secondaryContent" 
-                         (ngModelChange)="updateDiff()"
+                <textarea class="file-editor"
+                         [(ngModel)]="secondaryContent"
+                         (ngModelChange)="onSecondaryContentChange($event)"
                          [readonly]="!isSplitView"></textarea>
               </div>
               <!-- Impact response now shown in slider -->
@@ -358,6 +359,9 @@ export class LandingComponent implements OnInit {
   selectedImpact: any = null;
   showRawImpactDetail = false;
   analyzeResult: any = null; 
+  // secondary content undo history for compare pane
+  secondaryHistory: string[] = [];
+  secondaryHistoryIndex: number = -1;
   
   analyzeTreeData: Array<{ name: string; children?: any[]; key?: string; count?: number }> = [];
   analyzeExpandedKeys: Set<string> = new Set<string>();
@@ -1012,6 +1016,51 @@ export class LandingComponent implements OnInit {
     }
   }
 
+  // Handler for changes in the compare (secondary) editor. Maintains undo history.
+  public onSecondaryContentChange(value: string) {
+    try {
+      const v = String(value ?? '');
+      // If history is empty or last entry differs from new value, push it
+      if (this.secondaryHistoryIndex === -1) {
+        // initialize history with current value
+        this.secondaryHistory = [v];
+        this.secondaryHistoryIndex = 0;
+      } else {
+        const last = this.secondaryHistory[this.secondaryHistoryIndex] ?? '';
+        if (v !== last) {
+          // discard any redo entries
+          this.secondaryHistory = this.secondaryHistory.slice(0, this.secondaryHistoryIndex + 1);
+          this.secondaryHistory.push(v);
+          // cap history size
+          if (this.secondaryHistory.length > 100) this.secondaryHistory.shift();
+          this.secondaryHistoryIndex = this.secondaryHistory.length - 1;
+        }
+      }
+      this.secondaryContent = v;
+    } catch (e) {
+      this.secondaryContent = String(value ?? '');
+    }
+    // update diff to reflect new content
+    try { this.updateDiff(); } catch (e) { }
+  }
+
+  public get canUndo() {
+    return this.secondaryHistoryIndex > 0;
+  }
+
+  // Undo last change in compare pane
+  public undoCompareChange() {
+    if (!this.canUndo) return;
+    try {
+      this.secondaryHistoryIndex = Math.max(0, this.secondaryHistoryIndex - 1);
+      const prev = this.secondaryHistory[this.secondaryHistoryIndex] ?? '';
+      // set content without pushing new history entry
+      this.secondaryContent = prev;
+      // ensure textarea and diff update
+      try { this.updateDiff(); } catch (e) { }
+    } catch (e) { /* ignore */ }
+  }
+
   private findFileByName(name: string): FileNode | null {
     if (!this.fileTree) return null;
     let found: FileNode | null = null;
@@ -1586,23 +1635,47 @@ export class LandingComponent implements OnInit {
   }
 
   updateDiff() {
-  const original = (this.selectedFile?.content ?? '').split('\n');
-  const modified = (this.secondaryContent || '').split('\n');
-  const maxLen = Math.max(original.length, modified.length);
-  this.diffLines = [];
-  for (let i = 0; i < maxLen; i++) {
-    const origLine = original[i] ?? '';
-    const modLine = modified[i] ?? '';
-    if (origLine === modLine) {
-      this.diffLines.push({ type: 'unchanged', content: origLine });
-    } else if (!origLine && modLine) {
-      this.diffLines.push({ type: 'added', content: modLine });
-    } else if (origLine && !modLine) {
-      this.diffLines.push({ type: 'removed', content: origLine });
-    } else {
-      this.diffLines.push({ type: 'changed', content: `- ${origLine}\n+ ${modLine}` });
+    const original = (this.selectedFile?.content ?? '').split('\n');
+    const modified = (this.secondaryContent || '').split('\n');
+
+    const m = original.length;
+    const n = modified.length;
+    // Build LCS matrix (m+1 x n+1)
+    const lcs: number[][] = Array.from({ length: m + 1 }, () => new Array(n + 1).fill(0));
+    for (let i = m - 1; i >= 0; i--) {
+      for (let j = n - 1; j >= 0; j--) {
+        if (original[i] === modified[j]) {
+          lcs[i][j] = 1 + lcs[i + 1][j + 1];
+        } else {
+          lcs[i][j] = Math.max(lcs[i + 1][j], lcs[i][j + 1]);
+        }
+      }
     }
-  }
+
+    // Reconstruct diff preserving file order: additions / removals / unchanged
+    this.diffLines = [];
+    let i = 0, j = 0;
+    while (i < m || j < n) {
+      if (i < m && j < n && original[i] === modified[j]) {
+        this.diffLines.push({ type: 'unchanged', content: original[i] });
+        i++; j++;
+      } else if (j < n && (i === m || lcs[i][j + 1] >= lcs[i + 1][j])) {
+        // Prefer additions when LCS indicates so
+        this.diffLines.push({ type: 'added', content: modified[j] });
+        j++;
+      } else if (i < m) {
+        this.diffLines.push({ type: 'removed', content: original[i] });
+        i++;
+      } else {
+        // Fallback: remaining additions
+        if (j < n) {
+          this.diffLines.push({ type: 'added', content: modified[j] });
+          j++;
+        } else break;
+      }
+    }
+
+    // When there are differing lines but both exist at same index, we already mark them as removed + added in order
     if (this.isSplitView) {
       const hasRightContent = (this.secondaryContent || '').toString().trim().length > 0;
       const hasChange = this.diffLines.some(l => l.type !== 'unchanged');
@@ -1610,9 +1683,7 @@ export class LandingComponent implements OnInit {
       this.analyzePending = shouldAnalyze;
       if (shouldAnalyze && this.selectedItemId) {
         const idNum = parseInt(this.selectedItemId, 10);
-        if (!isNaN(idNum)) {
-          this.selectedRepoIds.add(idNum);
-        }
+        if (!isNaN(idNum)) this.selectedRepoIds.add(idNum);
       }
     } else {
       this.analyzePending = false;
