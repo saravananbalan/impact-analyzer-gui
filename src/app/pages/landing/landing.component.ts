@@ -188,7 +188,8 @@ import { ProfileMenuComponent } from '../../shared/components/profile-menu/profi
                 </div>
               </div>
               <div class="impact-modal-content">
-                <div class="impact-viz">
+                <div class="impact-tree-grid">
+                  <div class="impact-left">
                     <!-- top risk card summarizing the primary changed method and score -->
                     <div class="risk-card" *ngIf="impactResult && impactResult.length">
                       <div style="display:flex;flex-direction:column;">
@@ -197,8 +198,66 @@ import { ProfileMenuComponent } from '../../shared/components/profile-menu/profi
                         <div style="opacity:0.9; font-size:13px; margin-top:6px">{{ impactResult[0]?.llmReport?.analysisId ? ('Analysis ID: ' + impactResult[0]?.llmReport?.analysisId) : '' }}</div>
                       </div>
                     </div>
-                    <app-impact-visualization [impactData]="impactResult"></app-impact-visualization>
+
+                    <div class="contract-tree" *ngIf="impactTree && impactTree.length">
+                      <ul class="tree-root">
+                        <li *ngFor="let node of impactTree" class="root-node">
+                          <div class="node-row root-row" (click)="toggleImpactNode(node.key, $event)">
+                            <span class="node-toggle">{{ isImpactNodeExpanded(node.key) ? '▾' : '▸' }}</span>
+                            <span class="node-title root-title" [style.color]="getImpactColor(node.risk)">{{ node.title }}</span>
+                            <span class="node-meta">{{ node.subtitle }}</span>
+                          </div>
+                          <ul *ngIf="node.children && isImpactNodeExpanded(node.key)" class="children-list">
+                            <li *ngFor="let c1 of node.children" class="child-node">
+                              <div class="node-row" (click)="toggleImpactNode(c1.key, $event)">
+                                <span class="node-toggle">{{ isImpactNodeExpanded(c1.key) ? '▾' : (c1.children && c1.children.length ? '▸' : '') }}</span>
+                                <span class="node-title" [innerHTML]="c1.titleHtml"></span>
+                                <span class="node-icon">{{ getIconForImpactType(c1.impactType) }}</span>
+                              </div>
+                              <ul *ngIf="c1.children && isImpactNodeExpanded(c1.key)" class="grandchildren-list">
+                                <li *ngFor="let leaf of c1.children" class="leaf-node">
+                                  <div class="leaf-row" (click)="selectImpactLeaf(leaf, $event)" [class.selected]="selectedImpact?.key === leaf.key">
+                                    <span class="leaf-icon">{{ getIconForImpactType(leaf.impactType) }}</span>
+                                    <span class="leaf-title" [innerHTML]="leaf.titleHtml"></span>
+                                  </div>
+                                </li>
+                              </ul>
+                            </li>
+                          </ul>
+                        </li>
+                      </ul>
+                    </div>
                   </div>
+
+                  <div class="impact-right">
+                    <div class="detail-pane" *ngIf="selectedImpact">
+                      <div class="detail-header">
+                        <div class="detail-title">{{ selectedImpact.moduleName || selectedImpact.title }}</div>
+                        <div class="detail-risk" [style.color]="getImpactColor(selectedImpact.impactType)">Risk: {{ selectedImpact.risk ?? (impactResult?.[0]?.llmReport?.riskScore ?? 'N/A') }}/10</div>
+                      </div>
+                      <div class="detail-body">
+                        <div class="detail-section">
+                          <strong>Type:</strong> <span [innerText]="selectedImpact.impactType || selectedImpact.type || ''"></span>
+                        </div>
+                        <div class="detail-section">
+                          <strong>Description:</strong>
+                          <div class="detail-text">{{ selectedImpact.description || selectedImpact.detail || 'No description provided.' }}</div>
+                        </div>
+                        <div class="detail-section" *ngIf="selectedImpact.action">
+                          <strong>Action:</strong>
+                          <div class="detail-text">{{ selectedImpact.action }}</div>
+                        </div>
+                        <div class="detail-raw" *ngIf="showRawImpactDetail">
+                          <pre>{{ selectedImpact | json }}</pre>
+                        </div>
+                      </div>
+                    </div>
+                    <div *ngIf="!selectedImpact" class="detail-placeholder">Select an impacted module to view full details</div>
+                    <div class="viz-compact" *ngIf="impactResult">
+                      <app-impact-visualization [impactData]="impactResult" (nodeClick)="onImpactNodeClick($event)"></app-impact-visualization>
+                    </div>
+                  </div>
+                </div>
               </div>
             </div>
             <!-- Main editor or diff view -->
@@ -281,6 +340,11 @@ export class LandingComponent implements OnInit {
   diffLines: { type: 'added' | 'removed' | 'changed' | 'unchanged', content: string }[] = [];
   isChecking: boolean = false;
   impactResult: any = null; 
+  // UI tree derived from LLM-style impact result
+  impactTree: any[] = [];
+  impactExpandedKeys: Set<string> = new Set<string>();
+  selectedImpact: any = null;
+  showRawImpactDetail = false;
   analyzeResult: any = null; 
   
   analyzeTreeData: Array<{ name: string; children?: any[]; key?: string; count?: number }> = [];
@@ -1032,6 +1096,125 @@ export class LandingComponent implements OnInit {
     }, 0);
   }
 
+  /********** Impact Tree helpers for Check Impact popup **********/
+  private buildImpactTreeFromResult(res: any): any[] {
+    if (!res) return [];
+    // If response is an array (LLM-style), build a structured tree for the popup
+    const arr = Array.isArray(res) ? res : (res.items ?? []);
+    const out: any[] = [];
+    for (let i = 0; i < arr.length; i++) {
+      const item = arr[i] || {};
+      const llm = item.llmReport || {};
+      const rootKey = `impact-root-${i}`;
+      const riskScore = typeof llm.riskScore === 'number' ? llm.riskScore : (llm?.score ?? null);
+      const root = {
+        key: rootKey,
+        title: `🔥 HIGH RISK: ${item.changedMethod ?? 'Change'} — Risk Score: ${riskScore ?? 'N/A'}/10`,
+        subtitle: llm.summary ?? '',
+        risk: riskScore,
+        children: [] as any[]
+      };
+
+      // L1 - Change (analysis)
+      const changeKey = `${rootKey}-change`;
+      root.children.push({ key: changeKey, titleHtml: `<strong>1. Analyze Contractual Change</strong> — ${item.changedMethod ?? ''}`, detail: llm.reasoning ?? llm.analysis ?? '', impactType: 'INFO', children: [] });
+
+      // L1 - Impacts (list)
+      const impactsKey = `${rootKey}-impacts`;
+      const impactsNode: any = { key: impactsKey, titleHtml: `<strong>2. Trace Direct Dependencies</strong> — ${Array.isArray(llm.impactedModules) ? llm.impactedModules.length + ' dependents' : ''}`, children: [], impactType: 'GROUP' };
+      const mods = Array.isArray(llm.impactedModules) ? llm.impactedModules : [];
+      for (let j = 0; j < mods.length; j++) {
+        const m = mods[j];
+        const title = (m.moduleName ? `${m.moduleName}` : (m.name ?? `Module ${j+1}`));
+        const impactType = m.impactType ?? m.type ?? 'UNKNOWN';
+        const key = `${impactsKey}-m-${j}`;
+        const titleHtml = `<strong>[${impactType}]</strong> ${this.escapeHtml(title)}`;
+        impactsNode.children.push({ key, titleHtml, moduleName: m.moduleName, impactType, description: m.description ?? '', action: m.action ?? m.recommendation ?? '', risk: (typeof m.riskScore === 'number' ? m.riskScore : null), raw: m });
+      }
+      root.children.push(impactsNode);
+
+      // L1 - Summary
+      const summaryKey = `${rootKey}-summary`;
+      const conclusion = llm.conclusion ?? llm.summary ?? (llm.reasoning ? llm.reasoning.split('\n').slice(0,2).join(' ') : 'Final assessment');
+      root.children.push({ key: summaryKey, titleHtml: `<strong>3. Final Risk Assessment</strong>`, detail: conclusion, impactType: 'SUMMARY' });
+
+      out.push(root);
+    }
+    return out;
+  }
+
+  toggleImpactNode(key: string, event?: Event) {
+    if (event) event.stopPropagation();
+    if (!key) return;
+    if (this.impactExpandedKeys.has(key)) this.impactExpandedKeys.delete(key);
+    else this.impactExpandedKeys.add(key);
+  }
+
+  isImpactNodeExpanded(key: string) {
+    return !!key && this.impactExpandedKeys.has(key);
+  }
+
+  selectImpactLeaf(leaf: any, event?: Event) {
+    if (event) event.stopPropagation();
+    this.selectedImpact = leaf;
+    // expand the parent's children if not already
+    try { if (leaf && leaf.key) this.impactExpandedKeys.add(leaf.key); } catch (e) { }
+  }
+
+  getIconForImpactType(type: string) {
+    if (!type) return '📝';
+    const t = String(type).toUpperCase();
+    if (t.includes('SYNTACTIC')) return '❌';
+    if (t.includes('SEMANTIC')) return '⚠️';
+    if (t.includes('ADAPT')) return '⚠️';
+    return '📝';
+  }
+
+  getImpactColor(typeOrScore: any) {
+    if (typeof typeOrScore === 'number') {
+      const s = typeOrScore;
+      if (s >= 8) return '#dc3545';
+      if (s >= 5) return '#ffc107';
+      return '#28a745';
+    }
+    const t = String(typeOrScore || '').toUpperCase();
+    if (t.includes('SYNTACTIC')) return '#c82333';
+    if (t.includes('SEMANTIC')) return '#e0a800';
+    return '#6c757d';
+  }
+
+  private escapeHtml(s: string) {
+    if (!s) return '';
+    return String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+  }
+
+  // visualization emitted node clicked -> try to select the impacted module and open matching file in tree
+  onImpactNodeClick(ev: any) {
+    if (!ev || !ev.name) return;
+    const name = String(ev.name || '');
+    // try to find a matching leaf in impactTree
+    try {
+      for (const root of this.impactTree || []) {
+        for (const child of root.children || []) {
+          for (const leaf of child.children || []) {
+            if (leaf.moduleName === name || (leaf.moduleName && leaf.moduleName.endsWith('.' + name)) || leaf.titleHtml?.includes(this.escapeHtml(name))) {
+              this.selectImpactLeaf(leaf);
+              // attempt to open a file matching this module name
+              const candidate = this.findFileByName(name) || this.findFileByName((name.split('.').pop() || '') + '.java') || this.findFileByName(name.split('.').pop() || '');
+              if (candidate) {
+                this.selectedFile = candidate;
+                try { if (this.isSplitView && this.selectedFile?.content) { this.secondaryContent = this.selectedFile.content; this.updateDiff(); } } catch (e) {}
+                try { (document.querySelector('.editor-section .panel-header') as HTMLElement | null)?.scrollIntoView({ behavior: 'smooth' }); } catch (e) {}
+              }
+              return;
+            }
+          }
+        }
+      }
+    } catch (e) { }
+  }
+
+
   onCheckImpactClick(event: MouseEvent) {
     event.preventDefault();
     event.stopPropagation();
@@ -1332,6 +1515,10 @@ export class LandingComponent implements OnInit {
     this.http.post('/check-impact', payload).subscribe({
       next: (res) => {
         this.impactResult = res;
+        // build hierarchical contract tree for the popup
+        try { this.impactTree = this.buildImpactTreeFromResult(res); } catch (e) { this.impactTree = []; }
+        this.impactExpandedKeys.clear();
+        this.selectedImpact = null;
         this.isChecking = false;
         this.isBlockingUI = false;
         console.log('Impact check response', res);
