@@ -1240,6 +1240,27 @@ export class LandingComponent implements OnInit {
 
   // (intentionally left blank) previously had helper to strip numeric prefixes; reasoning should remain unchanged
 
+  // Helper to render impact tree as nested HTML for export
+  private impactTreeToHtml(nodes: any[]): string {
+    if (!nodes || !Array.isArray(nodes) || nodes.length === 0) return '<div>(no impact tree)</div>';
+    const escape = (s: any) => this.escapeHtml(String(s ?? ''));
+    const renderNode = (n: any): string => {
+      const title = escape(n.title ?? n.name ?? n.key ?? '');
+      const sub = n.subtitle ? `<div class="node-sub">${escape(n.subtitle)}</div>` : '';
+      const details: string[] = [];
+      if (n.impactType) details.push(escape(n.impactType));
+      if (typeof n.risk !== 'undefined' && n.risk !== null) details.push('Risk: ' + escape(n.risk));
+      const meta = details.length ? `<div class="node-sub">${escape(details.join(' — '))}</div>` : '';
+      let childrenHtml = '';
+      if (n.children && Array.isArray(n.children) && n.children.length) {
+        childrenHtml = '<ul>' + n.children.map((c: any) => renderNode(c)).join('') + '</ul>';
+      }
+      return `<li><strong>${title}</strong>${sub}${meta}${childrenHtml}</li>`;
+    };
+
+    return '<ul>' + nodes.map(n => renderNode(n)).join('') + '</ul>';
+  }
+
   private highlightQuotesToHtml(text: string): SafeHtml {
     // Return sanitized plain text (no HTML). Reasoning should remain as text only.
     if (!text) return this.sanitizer.bypassSecurityTrustHtml('');
@@ -1784,7 +1805,7 @@ export class LandingComponent implements OnInit {
         svgHtml = '';
       }
 
-      // build reasoning HTML from bullets as plain escaped text (no styling)
+  // build reasoning HTML from bullets as plain escaped text (no styling)
       let reasoningHtml = '';
       try {
         if (this.reasoningBullets && this.reasoningBullets.length) {
@@ -1814,7 +1835,10 @@ export class LandingComponent implements OnInit {
       const selectedFileName = this.selectedFile?.name ? escapeHtml(this.selectedFile.name) : '';
       const secondary = escapeHtml(String(this.secondaryContent ?? ''));
 
-  const body = `<!doctype html><html><head><meta charset="utf-8"><title>${title}</title><style>body{font-family:Arial,Helvetica,sans-serif;padding:20px;color:#111}pre{background:#f7f7f9;padding:12px;border-radius:6px;overflow:auto;max-height:60vh}h1,h2{color:#222}.viz-container{border:1px solid #e6e6ea;padding:12px;border-radius:6px;margin:8px 0;background:#fff}.reason-list{padding-left:20px} .selected-impact .detail{margin-top:6px;white-space:pre-wrap}</style></head><body><h1>${title}</h1><p>Generated: ${ts}</p>`
+      // Render impact tree as nested HTML list for human-friendly export
+      const impactTreeHtml = this.impactTreeToHtml(this.impactTree || []);
+
+      const body = `<!doctype html><html><head><meta charset="utf-8"><title>${title}</title><style>body{font-family:Arial,Helvetica,sans-serif;padding:20px;color:#111}pre{background:#f7f7f9;padding:12px;border-radius:6px;overflow:auto;max-height:60vh}h1,h2{color:#222}.viz-container{border:1px solid #e6e6ea;padding:12px;border-radius:6px;margin:8px 0;background:#fff}.reason-list{padding-left:20px}.impact-tree-export{font-family:inherit;border-radius:6px;padding:12px;background:#f7f7f9;margin-top:12px}.impact-tree-export ul{list-style:circle;margin-left:18px}.impact-tree-export li{margin:6px 0}.impact-tree-export .node-sub{color:#444;font-size:12px;margin-left:6px}</style></head><body><h1>${title}</h1><p>Generated: ${ts}</p>`
         + (after ? `<h2>After-Analyze</h2><pre>${escapeHtml(JSON.stringify(after, null, 2))}</pre>` : '')
         + (selectedFileName ? `<h2>Selected File</h2><div>${selectedFileName}</div>` : '')
         + (secondary ? `<h2>Comparison / Secondary Content</h2><pre>${secondary}</pre>` : '')
@@ -1822,7 +1846,7 @@ export class LandingComponent implements OnInit {
         + reasoningHtml
         + selectedImpactHtml
         + `<h2>Impact Result (raw)</h2><pre>${escapeHtml(JSON.stringify(impact, null, 2))}</pre>`
-        + `<h2>Impact Tree</h2><pre>${escapeHtml(JSON.stringify(this.impactTree ?? null, null, 2))}</pre>`
+        + `<h2>Impact Tree</h2><div class="impact-tree-export">${impactTreeHtml}</div>`
         + `</body></html>`;
       const blob = new Blob([body], { type: 'text/html' });
       const url = URL.createObjectURL(blob);
