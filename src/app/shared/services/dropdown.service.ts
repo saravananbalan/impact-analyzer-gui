@@ -1,25 +1,82 @@
-import { Injectable } from '@angular/core';
+import { Injectable, inject } from '@angular/core';
 import { Observable, of } from 'rxjs';
+import { catchError, map } from 'rxjs/operators';
+import { HttpClient } from '@angular/common/http';
 import { ApiResponse, DropdownItem } from '../interfaces/dropdown-data.interface';
 
 @Injectable({
   providedIn: 'root'
 })
 export class DropdownService {
-  // Mock data
-  private mockData: DropdownItem[] = [
-    { id: 1, name: 'Repo 1' },
-    { id: 2, name: 'Repo 2' },
-    { id: 3, name: 'Repo 3' },
-    { id: 4, name: 'Repo 4' },
-    { id: 5, name: 'Repo 5' }
-  ];
+  private http = inject(HttpClient);
 
-  getDropdownData(): Observable<ApiResponse> {
-    const response: ApiResponse = {
-      data: this.mockData
-    };
-    
-    return of(response);
+  // Fetch repository mapping from external analyzer service, transform to { status, data, details }
+  // The external API is expected to return an object where keys are repository URLs and values
+  // are maps of fully-qualified-class-name -> source string.
+  // Example input:
+  // { "https://github.com/owner/repo": { "com.app.A": "package ...", ... }, ... }
+  // We transform that into a scalable shape consumed by the UI:
+  // { status: 'success', data: [ { id, name }, ... ], details: { id: { id, name, url, description, files } } }
+  getDropdownData(): Observable<any> {
+    const externalUrl = 'http://localhost:8080/api/v1/impact/repositories';
+    return this.http.get<Record<string, Record<string, string>>>(externalUrl).pipe(
+      map((raw) => {
+        try {
+          if (!raw || typeof raw !== 'object') throw new Error('invalid payload');
+          const details: Record<string, any> = {};
+          const data: DropdownItem[] = [];
+
+          const repoKeys = Object.keys(raw || {});
+          if (repoKeys.length === 0) return { status: 'success', data, details };
+
+          let idx = 1;
+          const ensureFolder = (childrenArr: any[], folderName: string) => {
+            let f = childrenArr.find(c => c.type === 'folder' && c.name === folderName);
+            if (!f) {
+              f = { name: folderName, type: 'folder', children: [] };
+              childrenArr.push(f);
+            }
+            return f;
+          };
+
+          for (const repoUrl of repoKeys) {
+            const repoObj = raw[repoUrl] ?? {};
+            // dropdown should show the full key (repo URL)
+            data.push({ id: idx, name: repoUrl });
+
+            // Build a package-folder tree from fully-qualified class names for this repo
+            const packageRootChildren: any[] = [];
+            for (const className of Object.keys(repoObj)) {
+              const source = String(repoObj[className]);
+              const parts = className.split('.').filter(Boolean);
+              if (parts.length === 0) continue;
+              let curChildren = packageRootChildren;
+              for (let i = 0; i < parts.length - 1; i++) {
+                const seg = parts[i];
+                const folder = ensureFolder(curChildren, seg);
+                curChildren = folder.children;
+              }
+              const fileName = parts[parts.length - 1] + '.java';
+              curChildren.push({ name: fileName, type: 'file', content: source });
+            }
+
+            // assign details for this id; files contain the package-root children (e.g., com -> app -> analytics)
+            details[String(idx)] = { id: idx, name: repoUrl, url: repoUrl, description: '', files: packageRootChildren };
+            idx++;
+          }
+
+          return { status: 'success', data, details };
+        } catch (e) {
+          // fall through to fallback
+          return { status: 'error' };
+        }
+      }),
+      catchError(() => {
+        // fallback to local mock /repos endpoint if external service unreachable
+        return this.http.get('/repos').pipe(
+          catchError(() => of({ data: [ { id: 1, name: 'Repo 1' } ] }))
+        );
+      })
+    );
   }
 }

@@ -62,32 +62,36 @@ import { ProfileMenuComponent } from '../../shared/components/profile-menu/profi
         
         <!-- File tree section -->
         <div class="tree-panel">
-          <div class="panel-header" [class.no-file]="!selectedFile">File Tree</div>
-          <div class="tree-content">
-            <ng-container *ngFor="let node of fileTree">
-              <div class="tree-node">
-                <div class="node-row" (click)="onNodeClick(node)">
-                  <span class="node-toggle" *ngIf="node.type === 'folder'" (click)="$event.stopPropagation(); toggleFolder(node)">
-                    {{ node.isExpanded ? '-' : '+' }}
-                  </span>
-                  <span class="node-icon">{{ getFileIcon(node) }}</span>
-                  <span class="node-name" [class.active]="selectedFile === node">{{ node.name }}</span>
-                </div>
-                <div class="tree-children" *ngIf="node.type === 'folder' && node.isExpanded">
-                  <ng-container *ngFor="let child of node.children">
-                    <div class="tree-node">
-                      <div class="node-row" (click)="onNodeClick(child)">
-                        <span class="node-toggle" *ngIf="child.type === 'folder'" (click)="$event.stopPropagation(); toggleFolder(child)">
-                          {{ child.isExpanded ? '-' : '+' }}
-                        </span>
-                        <span class="node-icon">{{ getFileIcon(child) }}</span>
-                        <span class="node-name" [class.active]="selectedFile === child">{{ child.name }}</span>
-                      </div>
-                    </div>
-                  </ng-container>
-                </div>
+          <div class="panel-header" [class.no-file]="!selectedFile">
+            <div style="display:flex; align-items:center; gap:12px; width:100%; justify-content:space-between;">
+              <div style="font-weight:600">File Tree</div>
+              <div class="panel-controls" style="display:flex; gap:8px;">
+                <button type="button" class="control-btn" (click)="expandAllFolders(); $event.stopPropagation()" title="Expand all">Expand All</button>
+                <button type="button" class="control-btn" (click)="collapseAllFolders(); $event.stopPropagation()" title="Collapse all">Collapse All</button>
               </div>
+            </div>
+          </div>
+          <div class="tree-content">
+            <ng-container *ngIf="fileTree && fileTree.length; else emptyTree">
+              <ng-container *ngTemplateOutlet="fileTpl; context: { $implicit: fileTree }"></ng-container>
+              <ng-template #fileTpl let-nodes>
+                <ul class="tree-root">
+                  <li *ngFor="let node of nodes" [class.folder]="node.type === 'folder'" [class.file]="node.type !== 'folder'">
+                    <div class="an-node-row node-row" (click)="onNodeClick(node)">
+                      <button *ngIf="node.type === 'folder'" type="button" class="node-toggle" (click)="$event.stopPropagation(); toggleFolder(node)">{{ node.isExpanded ? '-' : '+' }}</button>
+                      <span class="node-icon">{{ getFileIcon(node) }}</span>
+                      <span class="node-name" [class.active]="selectedFile === node">{{ node.name }}</span>
+                    </div>
+                    <div class="tree-children" *ngIf="node.children && node.children.length && node.isExpanded">
+                      <ng-container *ngTemplateOutlet="fileTpl; context: { $implicit: node.children }"></ng-container>
+                    </div>
+                  </li>
+                </ul>
+              </ng-template>
             </ng-container>
+            <ng-template #emptyTree>
+              <div class="editor-placeholder">No files loaded</div>
+            </ng-template>
           </div>
         </div>
       </div>
@@ -172,8 +176,8 @@ import { ProfileMenuComponent } from '../../shared/components/profile-menu/profi
             </div>
 
             <!-- Check Impact Modal (visualization) -->
-            <div class="impact-modal-backdrop" *ngIf="impactResult" (click)="impactResult = null"></div>
-            <div class="impact-modal" *ngIf="impactResult">
+            <div class="impact-modal-backdrop fullscreen" *ngIf="impactResult" (click)="impactResult = null"></div>
+            <div class="impact-modal fullscreen" *ngIf="impactResult">
               <div class="impact-modal-header">
                 <span>Impact Response</span>
                 <div style="display:flex; gap:8px; align-items:center;">
@@ -185,8 +189,16 @@ import { ProfileMenuComponent } from '../../shared/components/profile-menu/profi
               </div>
               <div class="impact-modal-content">
                 <div class="impact-viz">
-                  <app-impact-visualization [impactData]="impactResult"></app-impact-visualization>
-                </div>
+                    <!-- top risk card summarizing the primary changed method and score -->
+                    <div class="risk-card" *ngIf="impactResult && impactResult.length">
+                      <div style="display:flex;flex-direction:column;">
+                        <div class="title">🔥 HIGH RISK: Risk Score {{ impactResult[0]?.llmReport?.riskScore ?? 'N/A' }}/10</div>
+                        <div style="opacity:0.95; margin-top:6px; font-weight:700">{{ impactResult[0]?.changedMethod ?? '' }}</div>
+                        <div style="opacity:0.9; font-size:13px; margin-top:6px">{{ impactResult[0]?.llmReport?.analysisId ? ('Analysis ID: ' + impactResult[0]?.llmReport?.analysisId) : '' }}</div>
+                      </div>
+                    </div>
+                    <app-impact-visualization [impactData]="impactResult"></app-impact-visualization>
+                  </div>
               </div>
             </div>
             <!-- Main editor or diff view -->
@@ -299,6 +311,26 @@ export class LandingComponent implements OnInit {
     const hasRightContent = (this.secondaryContent || '').toString().trim().length > 0;
     const hasChange = this.diffLines && this.diffLines.some(l => l.type !== 'unchanged');
     return this.isSplitView && hasRightContent && hasChange;
+  }
+
+  expandAllFolders() {
+    const walk = (nodes: any[]) => {
+      for (const n of nodes || []) {
+        if (n.type === 'folder') n.isExpanded = true;
+        if (n.children && n.children.length) walk(n.children);
+      }
+    };
+    walk(this.fileTree || []);
+  }
+
+  collapseAllFolders() {
+    const walk = (nodes: any[]) => {
+      for (const n of nodes || []) {
+        if (n.type === 'folder') n.isExpanded = false;
+        if (n.children && n.children.length) walk(n.children);
+      }
+    };
+    walk(this.fileTree || []);
   }
 
   onAfterAnalyzeClick(event?: MouseEvent) {
@@ -464,20 +496,17 @@ export class LandingComponent implements OnInit {
     this.isLoading = true;
     this.dropdownService.getDropdownData().subscribe({
       next: (res: any) => {
-        this.dropdownItems = res?.data ?? [];
+        // save full response (data + details) into sessionStorage so the app can use repo details later
         try {
-          if (this.dropdownItems && this.dropdownItems.length) {
-            this.dropdownItems.forEach((item, idx) => {
-              const metaKey = `repo${idx + 1}`;
-              try { sessionStorage.setItem(metaKey, JSON.stringify(item)); } catch (e) { }
-              try {
-                const tree = this.generateFileTreeForRepo(item);
-                const key = item.name || `repo-${item.id}`;
-                sessionStorage.setItem(key, JSON.stringify(tree));
-              } catch (e) { /* ignore */ }
-            });
-          }
-        } catch (err) {
+          try { sessionStorage.setItem('reposData', JSON.stringify(res)); } catch (e) { /* ignore storage errors */ }
+        } catch (err) { /* ignore */ }
+        this.dropdownItems = res?.data ?? [];
+        // auto-select first repo (first key) so the dropdown shows it and file tree loads
+        if (this.dropdownItems && this.dropdownItems.length > 0) {
+          const first = this.dropdownItems[0];
+          this.selectedItemId = String(first.id);
+          // populate file tree from the stored details for this repo
+          setTimeout(() => this.onOptionSelect(first), 0);
         }
         this.isLoading = false;
       },
@@ -488,17 +517,7 @@ export class LandingComponent implements OnInit {
           { id: 2, name: 'Project B' },
           { id: 3, name: 'Project C' }
         ];
-        try {
-          this.dropdownItems.forEach((item, idx) => {
-            const metaKey = `repo${idx + 1}`;
-            try { sessionStorage.setItem(metaKey, JSON.stringify(item)); } catch (e) { }
-            try {
-              const tree = this.generateFileTreeForRepo(item);
-              const key = item.name || `repo-${item.id}`;
-              sessionStorage.setItem(key, JSON.stringify(tree));
-            } catch (e) { }
-          });
-        } catch (e) { }
+        try { sessionStorage.setItem('reposData', JSON.stringify({ data: this.dropdownItems })); } catch (e) { /* ignore */ }
       }
     });
   }
@@ -658,13 +677,13 @@ export class LandingComponent implements OnInit {
       return;
     }
 
-    const repositoryUrls = this.selectedRepos.map(r => r.name);
+    const compareRepositoryUrls = this.selectedRepos.map(r => r.name);
     const targetFilename = this.selectedFile.name;
     const localFilePath = this.findPathForSelectedFile() || `/mock/path/${targetFilename}`;
 
     const payload = {
       status: 'success',
-      repositoryUrls,
+      compareRepositoryUrls,
       localFilePath,
       targetFilename
     };
@@ -677,32 +696,130 @@ export class LandingComponent implements OnInit {
     setTimeout(() => {
       try { (document.activeElement as HTMLElement)?.blur(); } catch (e) { /* ignore */ }
     }, 0);
-    const postPayload = {
-      repositoryUrls,
+    const sourceRepo = this.getSelectedItemName() || (compareRepositoryUrls && compareRepositoryUrls.length ? compareRepositoryUrls[0] : null);
+
+    const postPayload: any = {
+      compareRepositoryUrls,
       localFilePath: payload.localFilePath,
       targetFilename: payload.targetFilename,
+      // newly requested key: selectedRepository holds the source repository value
+      selectedRepository: sourceRepo,
+      // include changedCode taken from compare screen (right-side editor)
+      changedCode: this.secondaryContent ?? ''
     };
 
-    this.http.post('/analyze-impact', postPayload).subscribe({
+    // Call external analyzer endpoint and show a loader until response arrives
+    this.isLoading = true;
+    this.isBlockingUI = true;
+    const analyzeUrl = 'http://localhost:8080/api/v1/impact/analyze';
+    this.http.post(analyzeUrl, postPayload).subscribe({
       next: (res: any) => {
-        if (res && res.status === 'success') {
-          this.analyzeResult = res;
-          try { this.analyzeTreeData = this.buildAnalyzeTree(res); } catch (e) { this.analyzeTreeData = []; }
-        } else {
-          this.analyzeResult = { error: true, message: 'Analyze returned non-success', detail: res };
+        this.isLoading = false;
+        this.isBlockingUI = false;
+        this.analyzeResult = res;
+        try {
+          const impacted = res?.impactedModules ?? res?.affectedClasses ?? [];
+          // build analyze tree grouped by project using impactedModules
+          this.analyzeTreeData = this.buildAnalyzeTreeFromImpactedModules(impacted);
+        } catch (e) {
           this.analyzeTreeData = [];
         }
         this.showAnalyzeModal = true;
-        this.isBlockingUI = false;
         console.log('Impacted Files', res);
       },
       error: (err) => {
-        this.analyzeResult = { error: true, message: 'Failed to call analyze API', detail: err, payload };
-        this.showAnalyzeModal = true;
+        this.isLoading = false;
         this.isBlockingUI = false;
+        this.analyzeResult = { error: true, message: 'Failed to call analyze API', detail: err, payload };
+        this.analyzeTreeData = [];
+        this.showAnalyzeModal = true;
         console.error('Analyze failed', err);
       }
     });
+  }
+
+  // Build an analyze tree grouped by project name (from sessionStorage.reposData.details)
+  buildAnalyzeTreeFromImpactedModules(impactedModules: string[] | any): Array<{ name: string; children?: any[]; key?: string; count?: number }> {
+    const out: any[] = [];
+    if (!impactedModules) return out;
+    const modules = Array.isArray(impactedModules) ? impactedModules : (impactedModules.items ?? []);
+
+    // load cached repos data
+    let reposData: any = null;
+    try { reposData = JSON.parse(sessionStorage.getItem('reposData') || 'null'); } catch (e) { reposData = null; }
+    const details = reposData?.details ?? {};
+
+    // map repoId -> list of class full names
+    const repoMap: Record<string, string[]> = {};
+
+    const findRepoForClass = (classFullName: string): string | null => {
+      const parts = classFullName.split('.').filter(Boolean);
+      const classFile = parts[parts.length - 1] + '.java';
+      // search details for file path matching package structure
+      for (const id of Object.keys(details || {})) {
+        const files = details[id]?.files ?? [];
+        const found = this.searchFilesForPath(files, parts, classFile);
+        if (found) return id;
+      }
+      return null;
+    };
+
+    for (const m of modules) {
+      const className = typeof m === 'string' ? m : (m.moduleName ?? m.name ?? '');
+      if (!className) continue;
+      const repoId = findRepoForClass(className) || 'unknown';
+      repoMap[repoId] = repoMap[repoId] || [];
+      repoMap[repoId].push(className);
+    }
+
+    // build tree nodes per repo
+    for (const repoId of Object.keys(repoMap)) {
+      const name = (details[repoId]?.name) || (repoId === 'unknown' ? 'Unknown Project' : `Repo ${repoId}`);
+      const classes = repoMap[repoId];
+      // build nested package structure limited to impacted classes
+      const rootChildren: any[] = [];
+      for (const cls of classes) {
+        const parts = cls.split('.').filter(Boolean);
+        if (parts.length === 0) continue;
+        let curChildren = rootChildren;
+        for (let i = 0; i < parts.length - 1; i++) {
+          const seg = parts[i];
+          let node = curChildren.find((c: any) => c.type === 'folder' && c.name === seg);
+          if (!node) { node = { name: seg, type: 'folder', children: [] }; curChildren.push(node); }
+          curChildren = node.children;
+        }
+        const fileName = parts[parts.length - 1] + '.java';
+        curChildren.push({ name: fileName, type: 'file' });
+      }
+      out.push({ name, children: rootChildren });
+    }
+
+    return out;
+  }
+
+  // recursive search to find a file given package parts and fileName
+  private searchFilesForPath(nodes: any[], packageParts: string[], fileName: string): boolean {
+    if (!nodes || nodes.length === 0) return false;
+    const [first, ...rest] = packageParts;
+    for (const n of nodes) {
+      if (rest.length === 0) {
+        // last package segment: find fileName among children or match file node
+        if (n.type === 'file' && n.name === fileName) return true;
+        if (n.type === 'folder' && n.name === first) {
+          // search inside for fileName
+          if (this.searchFilesForPath(n.children || [], [], fileName)) return true;
+        }
+      } else {
+        if (n.type === 'folder' && n.name === first) {
+          if (this.searchFilesForPath(n.children || [], rest, fileName)) return true;
+        }
+      }
+      // also search recursively in other branches
+      if (n.children && n.children.length) {
+        if (this.searchFilesForPath(n.children, packageParts, fileName)) return true;
+      }
+    }
+    return false;
   }
 
   private buildAnalyzeTree(res: any): Array<{ name: string; children?: any[]; key?: string; count?: number }> {
@@ -933,8 +1050,22 @@ export class LandingComponent implements OnInit {
     this.selectedItemId = String(item.id);
     this.selectedFile = null;
     this.isDropdownOpen = false;
-    
-    this.fileTree = [
+    // try to use repo details loaded at startup (stored in sessionStorage under 'reposData')
+    let usedTree: any[] | null = null;
+    try {
+      const stored = sessionStorage.getItem('reposData');
+      if (stored) {
+        const parsed = JSON.parse(stored);
+        const details = parsed?.details ?? parsed?.detail ?? null;
+        if (details && details[item.id]) {
+          // server mock stores files under details[id].files
+          const f = details[item.id].files;
+          if (Array.isArray(f)) usedTree = f as any[];
+        }
+      }
+    } catch (e) { /* ignore parse errors */ }
+
+    this.fileTree = usedTree ?? [
       {
         name: 'src',
         type: 'folder',

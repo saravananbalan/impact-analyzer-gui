@@ -153,7 +153,8 @@
   display: flex;
   flex-direction: column;
   flex: 1;
-  overflow: hidden;
+  /* allow the inner tree content to show scrollbars when deeply nested items expand */
+  overflow: visible;
   background: var(--surface);
   border: 1px solid rgba(0,0,0,0.06);
   border-radius: 4px;
@@ -170,9 +171,23 @@
   align-items: center;
 }
 
+/* Cosmetic: make the File Comparison header blue and center the text */
+.panel-header.main-header {
+  background: var(--primary);
+  color: var(--header-text);
+  text-align: center;
+  justify-content: center;
+  align-items: center;
+  padding: 12px 16px;
+  border-radius: 6px;
+}
+
 .tree-content {
   flex: 1;
+  /* allow both vertical and horizontal scrolling when deep nesting expands beyond the sidebar */
   overflow: auto;
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
   padding: 8px;
 }
 
@@ -205,8 +220,9 @@
 }
 
 .node-name {
-  overflow: hidden;
-  text-overflow: ellipsis;
+  /* keep names on one line, but allow the tree to grow horizontally so the parent can show a scrollbar */
+  overflow: visible;
+  text-overflow: clip;
   white-space: nowrap;
 
   &.active {

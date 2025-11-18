@@ -392,9 +392,32 @@
   padding: 6px 10px;
   background: transparent;
   border: 1px solid rgba(0,0,0,0.06);
-  color: var(--text, #333);
-  border-radius: 4px;
 }
+
+.tree-children {
+  margin-left: 20px;
+}
+
+.tree-root {
+  list-style: none;
+  margin: 0;
+  padding-left: 8px;
+  /* expand width to fit nested content so the tree container can present a horizontal scrollbar */
+  width: max-content;
+  min-width: 100%;
+}
+.tree-root li {
+  margin: 2px 0;
+}
+.node-toggle {
+  background: transparent;
+  border: none;
+  cursor: pointer;
+  width: 20px;
+  text-align: center;
+  margin-right: 6px;
+}
+.node-row { display:flex; align-items:center; gap:8px; }
 
 .editor-content {
   flex: 1;
@@ -735,3 +758,87 @@
   from { transform: translateY(-6px) scale(.995); opacity: 0; }
   to { transform: translateY(0) scale(1); opacity: 1; }
 }
+
+/* Fullscreen variant for Check Impact modal/backdrop */
+.impact-modal-backdrop.fullscreen {
+  background: linear-gradient(180deg, rgba(3,7,18,0.85) 0%, rgba(7,11,25,0.85) 100%);
+  align-items: stretch;
+  justify-content: stretch;
+}
+
+.impact-modal.fullscreen {
+  position: fixed;
+  inset: 0;
+  top: 0;
+  left: 0;
+  transform: none;
+  width: 100vw;
+  height: 100vh;
+  max-width: none;
+  max-height: none;
+  border-radius: 0;
+  display: flex;
+  flex-direction: column;
+  background: linear-gradient(180deg,#071129 0%, #031025 100%);
+  color: #fff;
+  z-index: 5500;
+}
+
+.impact-modal.fullscreen .impact-modal-header {
+  padding: 28px 40px;
+  border-bottom: none;
+  background: linear-gradient(180deg, rgba(255,255,255,0.02), rgba(255,255,255,0.01));
+  box-shadow: inset 0 -1px 0 rgba(255,255,255,0.03);
+}
+
+.impact-modal.fullscreen .impact-modal-header span {
+  font-size: 1.25rem;
+  font-weight: 800;
+  letter-spacing: 0.6px;
+}
+
+.impact-modal.fullscreen .impact-modal-header .close-modal-btn {
+  background: transparent;
+  color: #fff;
+  border: 1px solid rgba(255,255,255,0.06);
+}
+
+.impact-modal.fullscreen .impact-modal-content {
+  padding: 28px 40px;
+  display: grid;
+  grid-template-columns: 1fr 360px;
+  gap: 24px;
+  align-items: start;
+}
+
+.impact-modal.fullscreen .impact-viz {
+  min-height: calc(100vh - 180px);
+  background: linear-gradient(180deg, rgba(255,255,255,0.02), rgba(255,255,255,0.01));
+  border-radius: 12px;
+  padding: 22px;
+  box-shadow: 0 20px 60px rgba(2,6,23,0.6);
+}
+
+.impact-modal.fullscreen .impact-json {
+  background: rgba(255,255,255,0.03);
+  padding: 16px;
+  border-radius: 10px;
+  color: #f8fafc;
+  max-height: calc(100vh - 200px);
+  overflow: auto;
+}
+
+.impact-modal.fullscreen .risk-card {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  background: linear-gradient(180deg,#ff5f5f,#d43e33);
+  color: white;
+  padding: 18px 20px;
+  border-radius: 12px;
+  margin-bottom: 18px;
+  box-shadow: 0 12px 32px rgba(212,62,51,0.28);
+}
+
+.impact-modal.fullscreen .risk-card .title { font-weight: 800; font-size: 1.1rem; }
+.impact-modal.fullscreen .impact-viz .viz-canvas { height: calc(100% - 120px); }
