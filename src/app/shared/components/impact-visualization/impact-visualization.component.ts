@@ -1,4 +1,4 @@
-import { Component, ElementRef, Input, OnChanges, SimpleChanges, ViewChild, inject, ChangeDetectorRef } from '@angular/core';
+import { Component, ElementRef, Input, OnChanges, SimpleChanges, ViewChild, inject, ChangeDetectorRef, OnDestroy } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import * as d3 from 'd3';
 
@@ -103,7 +103,7 @@ interface ImpactNode {
     }
   `]
 })
-export class ImpactVisualizationComponent implements OnChanges {
+export class ImpactVisualizationComponent implements OnChanges, OnDestroy {
   @Input() impactData!: any;
   @ViewChild('vizContainer', { static: true }) private vizContainer!: ElementRef;
   private cdr = inject(ChangeDetectorRef);
@@ -115,6 +115,9 @@ export class ImpactVisualizationComponent implements OnChanges {
   private svg: any;
   private treeLayout: any;
   private root: any;
+  // hold simulation for force layout so we can programmatically center / restart it
+  private simulation: any = null;
+  private svgSelection: any = null;
   
   ngOnChanges(changes: SimpleChanges) {
     if (changes['impactData']) {
@@ -200,9 +203,11 @@ export class ImpactVisualizationComponent implements OnChanges {
     const width = Math.max(300, element.clientWidth);
     const height = Math.max(200, element.clientHeight);
 
-    d3.select(element).select('svg').remove();
+  try { d3.select(element).select('svg').remove(); } catch (e) { }
+  this.simulation = null;
+  this.svgSelection = null;
 
-    const isLlmReport = data && data.children && data.children.some((c: any) => c.type === 'method');
+  const isLlmReport = data && data.children && data.children.some((c: any) => c.type === 'method');
     if (isLlmReport) {
       const nodes: any[] = [];
       const links: any[] = [];
@@ -219,9 +224,12 @@ export class ImpactVisualizationComponent implements OnChanges {
         }
       }
 
-      const svg = d3.select(element).append('svg').attr('width', width).attr('height', height);
+  const svg = d3.select(element).append('svg').attr('width', width).attr('height', height);
 
-      const simulation = d3.forceSimulation(nodes as any)
+  // store svg selection for later control
+  this.svgSelection = svg;
+
+  const simulation = d3.forceSimulation(nodes as any)
         .force('link', d3.forceLink(links).id((d: any) => d.id).distance(140).strength(1))
         .force('charge', d3.forceManyBody().strength(-400))
         .force('center', d3.forceCenter(width / 2, height / 2))
@@ -320,11 +328,15 @@ export class ImpactVisualizationComponent implements OnChanges {
         node.attr('transform', (d: any) => `translate(${d.x},${d.y})`);
       });
 
+      // keep a reference so center() can nudge the simulation
+      this.simulation = simulation;
+
       return;
     }
 
-    const svg = d3.select(element).append('svg').attr('width', width).attr('height', height).append('g').attr('transform', `translate(${width / 4},${height / 2})`);
-    this.treeLayout = d3.tree().size([height * 0.8, width * 0.6]);
+  const svg = d3.select(element).append('svg').attr('width', width).attr('height', height).append('g').attr('transform', `translate(${width / 4},${height / 2})`);
+  this.svgSelection = svg;
+  this.treeLayout = d3.tree().size([height * 0.8, width * 0.6]);
     this.root = d3.hierarchy(data);
     const treeNodes = this.treeLayout(this.root);
 
@@ -343,6 +355,50 @@ export class ImpactVisualizationComponent implements OnChanges {
     treeNode.append('circle').attr('r', 6).style('stroke', (d: any) => this.getNodeColor(d.data));
     treeNode.append('text').attr('dy', '.31em').attr('x', (d: any) => d.children ? -8 : 8).style('text-anchor', (d: any) => d.children ? 'end' : 'start').text((d: any) => d.data.name);
     treeNode.append('title').text((d: any) => d.data.description ? `${d.data.description}` : '');
+  }
+
+  // public API: programmatically center/restart the visualization with a smooth animation
+  public center() {
+    try {
+      const el = this.vizContainer?.nativeElement;
+      if (!el) return;
+      const width = Math.max(300, el.clientWidth);
+      const height = Math.max(200, el.clientHeight);
+
+      // If we have a force simulation, adjust center and restart with a short alpha
+      if (this.simulation) {
+        try {
+          const centerForce = this.simulation.force && this.simulation.force('center');
+          if (centerForce) {
+            // set center to container center
+            centerForce.x = width / 2;
+            centerForce.y = height / 2;
+          }
+          // gently bump the simulation so nodes move toward new center
+          this.simulation.alphaTarget(0.35).restart();
+          // decay back to 0 after a short duration
+          setTimeout(() => { try { this.simulation.alphaTarget(0); } catch (e) { } }, 800);
+        } catch (e) { /* ignore */ }
+      }
+
+      // animate SVG size/transform to reflect new center visually
+      try {
+        const s = d3.select(el).select('svg');
+        if (!s.empty()) {
+          s.transition().duration(600).attr('width', width).attr('height', height);
+          // if there is a group transform (tree layout), center it
+          const g = s.select('g');
+          if (!g.empty()) {
+            g.transition().duration(600).attr('transform', `translate(${width / 4},${height / 2})`);
+          }
+        }
+      } catch (e) { /* ignore */ }
+    } catch (e) { /* ignore */ }
+  }
+
+  ngOnDestroy() {
+    try { if (this.simulation) { this.simulation.stop(); this.simulation = null; } } catch (e) { }
+    try { if (this.svgSelection) { d3.select(this.vizContainer?.nativeElement).select('svg').remove(); this.svgSelection = null; } } catch (e) { }
   }
 
   private getNodeColor(node: ImpactNode): string {

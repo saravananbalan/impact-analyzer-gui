@@ -183,6 +183,41 @@ app.post('/check-impact', (req, res) => {
                 }
               ]
             }
+          },
+          {
+            changedMethod: 'calculateDiscount2',
+            llmReport: {
+              analysisId: 'A1B2C3D4E56',
+              riskScore: 9,
+              reasoning: `1. Analyze Contractual Change in Module A: The ` + "`calculateDiscount`" + ` method in Module A (PricingUtility) has changed its return type from ` + "`double`" + ` to ` + "`BigDecimal`" + `. This is a significant change from a primitive type to an object type, primarily for precision, but it introduces breaking changes for any consumer expecting a ` + "`double`" + `.
+2. Trace Direct Dependencies (Syntactic Check):
+   - ` + "`com.app.analytics.AnalyticsEngine`" + `: The ` + "`logDiscount`" + ` method calls ` + "`calculateDiscount`" + `. The assignment ` + "`BigDecimal discount = pricing.calculateDiscount(price, percentage);`" + ` is syntactically correct as it now expects and receives a ` + "`BigDecimal`" + `.
+   - ` + "`com.consumer.AuditService`" + `: The ` + "`printTaxAndInvoiceInfo`" + ` method calls ` + "`calculateDiscount`" + `. The assignment ` + "`double totalCalculateValue = pricingUtility.calculateDiscount(2, 3);`" + ` will result in a ` + "`SYNTACTIC_BREAK`" + ` because a ` + "`BigDecimal`" + ` cannot be implicitly converted to a ` + "`double`" + `.
+   - ` + "`com.app.order.OrderProcessor`" + `: The ` + "`processOrder`" + ` method calls ` + "`calculateDiscount`" + `. The assignment ` + "`double appliedDiscount = pricing.calculateDiscount(total, discountPct);`" + ` will also result in a ` + "`SYNTACTIC_BREAK`" + ` for the same reason.
+3. Trace Semantic Dependencies (Logic Check):
+   - ` + "`com.app.analytics.AnalyticsEngine`" + `: Although syntactically correct, the change from a primitive ` + "`double`" + ` to an object ` + "`BigDecimal`" + ` introduces semantic implications. Primitives cannot be ` + "`null`" + `, whereas objects can. The contextual module's code explicitly includes ` + "`if (discount != null)`" + `, indicating an awareness of this new potential state. This change in data handling requirements, even if addressed, represents a ` + "`SEMANTIC_BREAK`" + ` as the nature of the data and its safety checks have fundamentally changed, introducing a runtime risk if not handled correctly.
+   - ` + "`com.consumer.AuditService`" + `: The primary impact is syntactic. Once resolved, any subsequent arithmetic operations involving ` + "`totalCalculateValue`" + ` would need to be updated to use ` + "`BigDecimal`" + ` methods, which would be a further semantic change.
+   - ` + "`com.app.order.OrderProcessor`" + `: The primary impact is syntactic. Once resolved, the subtraction ` + "`total - appliedDiscount`" + ` would need to be updated to use ` + "`BigDecimal`" + ` arithmetic (e.g., ` + "`BigDecimal.valueOf(total).subtract(appliedDiscount)`" + `), which would be a further semantic change.
+4. Validate Code Removals (Dead Code Check): No methods were removed from Module A, so this step is not applicable.
+5. Determine Risk Score: Two modules (` + "`com.consumer.AuditService`" + `, ` + "`com.app.order.OrderProcessor`" + `) will fail to compile due to ` + "`SYNTACTIC_BREAK`s`" + `. One module (` + "`com.app.analytics.AnalyticsEngine`" + `) requires a semantic adjustment to handle the new object type and its potential nullability, even if the current code handles it. This widespread impact on compilation and the fundamental change in data type handling warrants a high-risk score. A score of 9 is appropriate due to the immediate compilation failures and the necessary semantic adjustments.`,
+              impactedModules: [
+                {
+                  moduleName: 'com.app.analytics.AnalyticsEngine1',
+                  impactType: 'SEMANTIC_BREAK',
+                  description: "The return type of `calculateDiscount` changed from `double` to `BigDecimal`. While the code was updated to accept `BigDecimal`, the change from a primitive to an object type introduces a new runtime risk. `BigDecimal` can be `null`, unlike `double`, requiring explicit null checks. Although a null check is present, the fundamental change in data handling and the potential for `NullPointerException` if not handled correctly constitutes a semantic break. The subsequent operations on `BigDecimal` (e.g., `toPlainString()`) are also specific to the `BigDecimal` type and differ from primitive `double` operations."
+                },
+                {
+                  moduleName: 'com.consumer.AuditService1',
+                  impactType: 'SYNTACTIC_BREAK',
+                  description: "The `calculateDiscount` method now returns `BigDecimal`, but the `totalCalculateValue` variable is declared as `double`. This results in a compilation error: 'incompatible types: BigDecimal cannot be converted to double'. The code needs to be updated to declare `totalCalculateValue` as `BigDecimal` and adjust subsequent operations if any."
+                },
+                {
+                  moduleName: 'com.app.order.OrderProcessor1',
+                  impactType: 'SYNTACTIC_BREAK',
+                  description: "The `calculateDiscount` method now returns `BigDecimal`, but the `appliedDiscount` variable is declared as `double`. This results in a compilation error: 'incompatible types: BigDecimal cannot be converted to double'. The code needs to be updated to declare `appliedDiscount` as `BigDecimal` and modify the subtraction operation (`total - appliedDiscount`) to use `BigDecimal` arithmetic (e.g., `BigDecimal.valueOf(total).subtract(appliedDiscount)`)."
+                }
+              ]
+            }
           }
     ];
 

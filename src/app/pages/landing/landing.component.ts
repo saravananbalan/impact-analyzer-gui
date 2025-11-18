@@ -1,4 +1,5 @@
 import { Component, OnInit, inject, HostListener, ChangeDetectorRef } from '@angular/core';
+import { DomSanitizer, SafeHtml } from '@angular/platform-browser';
 import { HttpClient, HttpClientModule } from '@angular/common/http';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
@@ -256,6 +257,14 @@ import { ProfileMenuComponent } from '../../shared/components/profile-menu/profi
                     <div class="viz-compact" *ngIf="impactResult">
                       <app-impact-visualization [impactData]="impactResult" (nodeClick)="onImpactNodeClick($event)"></app-impact-visualization>
                     </div>
+
+                    <!-- Reasoning bullets displayed below the graph -->
+                    <div class="reasoning-panel-below" *ngIf="reasoningBulletsHtml && reasoningBulletsHtml.length">
+                      <div class="panel-title">Reasoning</div>
+                      <ol class="reason-list">
+                        <li *ngFor="let h of reasoningBulletsHtml" [innerHTML]="h"></li>
+                      </ol>
+                    </div>
                   </div>
                 </div>
               </div>
@@ -326,6 +335,7 @@ export class LandingComponent implements OnInit {
   private dropdownService = inject(DropdownService);
   private http = inject(HttpClient);
   private cdr = inject(ChangeDetectorRef);
+  private sanitizer = inject(DomSanitizer);
 
   dropdownItems: DropdownItem[] = [];
   selectedItemId: string = '';
@@ -340,6 +350,8 @@ export class LandingComponent implements OnInit {
   diffLines: { type: 'added' | 'removed' | 'changed' | 'unchanged', content: string }[] = [];
   isChecking: boolean = false;
   impactResult: any = null; 
+  reasoningBullets: string[] = [];
+  reasoningBulletsHtml: SafeHtml[] = [];
   // UI tree derived from LLM-style impact result
   impactTree: any[] = [];
   impactExpandedKeys: Set<string> = new Set<string>();
@@ -1183,6 +1195,24 @@ export class LandingComponent implements OnInit {
     return '#6c757d';
   }
 
+  public parseReasoningToBullets(text: string): string[] {
+    if (!text) return [];
+    const lines = String(text).split(/\r?\n/).map(l => l.trim()).filter(l => l.length > 0);
+    if (lines.length >= 1 && lines.length <= 12) {
+      // assume already bullet-separated
+      return lines;
+    }
+    const sentences = String(text).split(/(?<=[\.!\?])\s+/).map(s => s.trim()).filter(s => s.length > 0);
+    return sentences.length > 0 ? sentences : [text.trim()];
+  }
+
+  private highlightQuotesToHtml(text: string): SafeHtml {
+    if (!text) return this.sanitizer.bypassSecurityTrustHtml('');
+    // wrap single-quoted substrings in a span with class 'quote-highlight'
+    const replaced = String(text).replace(/'([^']+)'/g, "<span class=\"quote-highlight\">'$1'</span>");
+    return this.sanitizer.bypassSecurityTrustHtml(replaced);
+  }
+
   private escapeHtml(s: string) {
     if (!s) return '';
     return String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
@@ -1517,6 +1547,26 @@ export class LandingComponent implements OnInit {
         this.impactResult = res;
         // build hierarchical contract tree for the popup
         try { this.impactTree = this.buildImpactTreeFromResult(res); } catch (e) { this.impactTree = []; }
+        // prepare reasoning bullets from the response and sanitize quoted text
+        try {
+          const anyRes: any = res;
+          let rawReasoning = '';
+          try {
+            if (Array.isArray(anyRes)) {
+              const first = anyRes[0] ?? {};
+              rawReasoning = first?.llmReport?.reasoning ?? first?.llmReport?.analysis ?? first?.analysis ?? first?.reasoning ?? '';
+            } else {
+              rawReasoning = anyRes?.llmReport?.reasoning ?? anyRes?.llmReport?.analysis ?? anyRes?.analysis ?? anyRes?.reasoning ?? '';
+            }
+          } catch (er) {
+            rawReasoning = '';
+          }
+          this.reasoningBullets = this.parseReasoningToBullets(String(rawReasoning || ''));
+          this.reasoningBulletsHtml = (this.reasoningBullets || []).map(b => this.highlightQuotesToHtml(b));
+        } catch (e) {
+          this.reasoningBullets = [];
+          this.reasoningBulletsHtml = [];
+        }
         this.impactExpandedKeys.clear();
         this.selectedImpact = null;
         this.isChecking = false;
@@ -1553,14 +1603,39 @@ export class LandingComponent implements OnInit {
 
   downloadCheckImpactReport() {
     try {
-      const data = this.impactResult ?? { message: 'no impact result' };
-      const json = JSON.stringify(data, null, 2);
+      // Collect all visible screen data
+      const impact = this.impactResult ?? null;
+      const screenData: any = {
+        timestamp: new Date().toISOString(),
+        impactResult: impact,
+        impactTree: this.impactTree ?? null,
+        selectedImpact: this.selectedImpact ?? null,
+        reasoningBullets: this.reasoningBullets ?? [],
+        impactSummaryText: (this as any).impactSummaryText ?? null,
+        selectedImpactRiskDisplay: (this as any).selectedImpactRiskDisplay ?? null,
+        uiState: {
+          isSplitView: this.isSplitView,
+          selectedFile: this.selectedFile?.name ?? null
+        }
+      };
+      // try to capture SVG markup of the visualization (if present)
+      try {
+        const svgEl = document.querySelector('.impact-modal .viz-compact svg') as SVGElement | null;
+        if (svgEl) {
+          const serializer = new XMLSerializer();
+          screenData.visualizationSvg = serializer.serializeToString(svgEl);
+        }
+      } catch (e) {
+        screenData.visualizationSvg = null;
+      }
+
+      const json = JSON.stringify(screenData, null, 2);
       const blob = new Blob([json], { type: 'application/json' });
       const url = URL.createObjectURL(blob);
       const a = document.createElement('a');
       const ts = new Date().toISOString().replace(/[:.]/g, '-');
       a.href = url;
-      a.download = `check-impact-report-${ts}.json`;
+      a.download = `check-impact-screen-data-${ts}.json`;
       document.body.appendChild(a);
       a.click();
       a.remove();
@@ -1599,19 +1674,64 @@ export class LandingComponent implements OnInit {
       const title = 'Check Impact Report';
       const ts = new Date().toISOString();
       const escapeHtml = (s: string) => s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+      // try to capture rendered SVG inside the modal visualization container
       let svgHtml = '';
       try {
-        const svgEl = document.querySelector('.impact-viz svg') as SVGElement | null;
+        const svgEl = document.querySelector('.impact-modal .viz-compact svg') as SVGElement | null;
         if (svgEl) {
           const serializer = new XMLSerializer();
-          svgHtml = serializer.serializeToString(svgEl);
-          svgHtml = `<h2>Visualization</h2><div class="viz-container">${svgHtml}</div>`;
+          let svgString = serializer.serializeToString(svgEl);
+          // ensure svg has xmlns
+          if (!svgString.match(/xmlns="http:\/\/www\.w3\.org\/2000\/svg"/)) {
+            svgString = svgString.replace(/^<svg/, '<svg xmlns="http://www.w3.org/2000/svg"');
+          }
+          svgHtml = `<h2>Visualization</h2><div class="viz-container">${svgString}</div>`;
         }
       } catch (e) {
         svgHtml = '';
       }
 
-      const body = `<!doctype html><html><head><meta charset="utf-8"><title>${title}</title><style>body{font-family:Arial,Helvetica,sans-serif;padding:20px;color:#111}pre{background:#f7f7f9;padding:12px;border-radius:6px;overflow:auto;max-height:60vh}h1,h2{color:#222}.viz-container{border:1px solid #e6e6ea;padding:12px;border-radius:6px;margin:8px 0;background:#fff}</style></head><body><h1>${title}</h1><p>Generated: ${ts}</p>` + (after ? `<h2>After-Analyze</h2><pre>${escapeHtml(JSON.stringify(after, null, 2))}</pre>` : '') + svgHtml + `<h2>Impact Result</h2><pre>${escapeHtml(JSON.stringify(impact, null, 2))}</pre></body></html>`;
+      // build reasoning HTML from bullets, preserving highlighted single-quoted fragments
+      let reasoningHtml = '';
+      try {
+        if (this.reasoningBullets && this.reasoningBullets.length) {
+          const items = this.reasoningBullets.map(b => {
+            const esc = escapeHtml(String(b || ''));
+            // highlight single-quoted substrings (after escaping) by wrapping them in a span
+            const withQuotes = esc.replace(/'([^']+)'/g, "<span class=\"quote-highlight\">'$1'</span>");
+            return `<li>${withQuotes}</li>`;
+          }).join('');
+          reasoningHtml = `<h2>Reasoning</h2><ol class="reason-list">${items}</ol>`;
+        }
+      } catch (e) {
+        reasoningHtml = '';
+      }
+
+      // selected impact details (if any)
+      let selectedImpactHtml = '';
+      try {
+        if (this.selectedImpact) {
+          const si = this.selectedImpact;
+          selectedImpactHtml = `<h2>Selected Impact</h2><div class="selected-impact"><div><strong>${escapeHtml(String(si.moduleName ?? si.title ?? ''))}</strong> — <span style=\"color:${this.getImpactColor(si.risk || si.impactType)}\">Risk: ${escapeHtml(String(si.risk ?? this.impactResult?.[0]?.llmReport?.riskScore ?? 'N/A'))}/10</span></div><div class=\"detail\">${escapeHtml(String(si.description ?? si.detail ?? ''))}</div></div>`;
+        }
+      } catch (e) {
+        selectedImpactHtml = '';
+      }
+
+      // include other visible state like selected file and secondary content
+      const selectedFileName = this.selectedFile?.name ? escapeHtml(this.selectedFile.name) : '';
+      const secondary = escapeHtml(String(this.secondaryContent ?? ''));
+
+      const body = `<!doctype html><html><head><meta charset="utf-8"><title>${title}</title><style>body{font-family:Arial,Helvetica,sans-serif;padding:20px;color:#111}pre{background:#f7f7f9;padding:12px;border-radius:6px;overflow:auto;max-height:60vh}h1,h2{color:#222}.viz-container{border:1px solid #e6e6ea;padding:12px;border-radius:6px;margin:8px 0;background:#fff}.quote-highlight{background: #fff3b0; padding:0 2px; border-radius:2px}.reason-list{padding-left:20px} .selected-impact .detail{margin-top:6px;white-space:pre-wrap}</style></head><body><h1>${title}</h1><p>Generated: ${ts}</p>`
+        + (after ? `<h2>After-Analyze</h2><pre>${escapeHtml(JSON.stringify(after, null, 2))}</pre>` : '')
+        + (selectedFileName ? `<h2>Selected File</h2><div>${selectedFileName}</div>` : '')
+        + (secondary ? `<h2>Comparison / Secondary Content</h2><pre>${secondary}</pre>` : '')
+        + svgHtml
+        + reasoningHtml
+        + selectedImpactHtml
+        + `<h2>Impact Result (raw)</h2><pre>${escapeHtml(JSON.stringify(impact, null, 2))}</pre>`
+        + `<h2>Impact Tree</h2><pre>${escapeHtml(JSON.stringify(this.impactTree ?? null, null, 2))}</pre>`
+        + `</body></html>`;
       const blob = new Blob([body], { type: 'text/html' });
       const url = URL.createObjectURL(blob);
       const a = document.createElement('a');
@@ -1628,7 +1748,7 @@ export class LandingComponent implements OnInit {
 
   downloadVisualizationSvg() {
     try {
-      const svgEl = document.querySelector('.impact-viz svg') as SVGElement | null;
+  const svgEl = document.querySelector('.impact-modal .viz-compact svg') as SVGElement | null;
       if (!svgEl) {
         console.warn('No SVG visualization found to download');
         return;
