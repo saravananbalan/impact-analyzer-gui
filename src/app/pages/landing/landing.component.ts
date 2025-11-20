@@ -24,8 +24,9 @@ import { ProfileMenuComponent } from '../../shared/components/profile-menu/profi
       <div class="content-wrapper">
         <!-- Left sidebar with dropdown and file tree -->
         <div class="left-sidebar">
-        <!-- Dropdown section -->
-        <div class="dropdown-container">
+  <!-- Dropdown section -->
+  <div class="panel-header select-repo-header">SELECT REPOSITORY</div>
+  <div class="dropdown-container">
           <div class="custom-select">
             <div class="select-header" (click)="toggleDropdown()">
               <span>{{ selectedItemId ? (getSelectedItemName() || 'Select Repo...') : 'Select Repo...' }}</span>
@@ -52,7 +53,7 @@ import { ProfileMenuComponent } from '../../shared/components/profile-menu/profi
                   </label>
                 </div>
                 <div class="dropdown-actions">
-                  <button type="button" class="apply-btn" (click)="analyzeSelectedRepos(); $event.preventDefault(); $event.stopPropagation()">Analyze</button>
+                  <button *ngIf="selectedRepoIds.size > 0" type="button" class="apply-btn" (click)="analyzeSelectedRepos(); $event.preventDefault(); $event.stopPropagation()">Analyze</button>
                   <button type="button" class="cancel-btn" (click)="cancelAnalyze(); $event.preventDefault(); $event.stopPropagation()">Cancel</button>
                 </div>
               </div>
@@ -117,15 +118,13 @@ import { ProfileMenuComponent } from '../../shared/components/profile-menu/profi
               </button>
               <button type="button" class="undo-btn" (click)="undoCompareChange()" [disabled]="!canUndo" *ngIf="isSplitView" title="Undo last change in compare pane">Undo</button>
             </div>
-            <button type="button" class="analyze-impact-btn" (click)="startAnalyze(); $event.stopPropagation()" [class.active]="analyzePending || selectedRepoIds.size > 0" [disabled]="!canAnalyze" [hidden]="isSplitView">
+            <button type="button" class="analyze-impact-btn" (click)="startAnalyze(); $event.stopPropagation()" [class.active]="analyzePending || selectedRepoIds.size > 0" [disabled]="!canAnalyze" [hidden]="isSplitView || selectedRepoIds.size === 0">
               <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" style="margin-right:6px; vertical-align:text-bottom;">
                 <path fill="currentColor" d="M15.5 14h-.79l-.28-.27A6.471 6.471 0 0 0 16 9.5 6.5 6.5 0 1 0 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19l-4.99-5zM9.5 14C7 14 5 12 5 9.5S7 5 9.5 5 14 7 14 9.5 12 14 9.5 14z"/>
               </svg>
               Analyze Impact
             </button>
-            <button #afterAnalyzeBtn type="button" class="after-analyze-btn" (click)="onAfterAnalyzeClick($event)" [disabled]="!selectedFile && !isSplitView">
-              After Analyze Impact
-            </button>
+            
             <button type="button" class="check-impact-btn" (click)="onCheckImpactClick($event)" [disabled]="!isSplitView || isChecking">
               <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" style="margin-right: 4px; vertical-align: text-bottom;">
                 <path fill="currentColor" d="M9 21c0 .55.45 1 1 1h4c.55 0 1-.45 1-1v-1H9v1zm3-19C8.14 2 5 5.14 5 9c0 2.38 1.19 4.47 3 5.74V17c0 .55.45 1 1 1h6c.55 0 1-.45 1-1v-2.26c1.81-1.27 3-3.36 3-5.74 0-3.86-3.14-7-7-7zm2.85 11.1l-.85.6V16h-4v-2.3l-.85-.6C7.8 12.16 7 10.63 7 9c0-2.76 2.24-5 5-5s5 2.24 5 5c0 1.63-.8 3.16-2.15 4.1z"/>
@@ -285,8 +284,8 @@ import { ProfileMenuComponent } from '../../shared/components/profile-menu/profi
                 <textarea *ngIf="!isSplitView" 
                          class="file-editor" 
                          [(ngModel)]="selectedFile.content"
-                         [readonly]="isSplitView"
-                         [class.readonly]="isSplitView"></textarea>
+                         [readonly]="!isSplitView"
+                         [class.readonly]="!isSplitView"></textarea>
               </div>
               <!-- Show placeholder when no file selected -->
               <div class="editor-placeholder" *ngIf="!selectedFile">
