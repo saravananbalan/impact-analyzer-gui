@@ -787,34 +787,216 @@ export class LandingComponent implements OnInit {
       changedCode: this.secondaryContent ?? ''
     };
 
-    // Call external analyzer endpoint and show a loader until response arrives
-    this.isLoading = true;
-    this.isBlockingUI = true;
-    const analyzeUrl = 'http://localhost:8080/api/v1/impact/analyze';
-    this.http.post(analyzeUrl, postPayload).subscribe({
-      next: (res: any) => {
-        this.isLoading = false;
-        this.isBlockingUI = false;
-        this.analyzeResult = res;
-        try {
-          const impacted = res?.impactedModules ?? res?.affectedClasses ?? [];
-          // build analyze tree grouped by project using impactedModules
-          this.analyzeTreeData = this.buildAnalyzeTreeFromImpactedModules(impacted);
-        } catch (e) {
-          this.analyzeTreeData = [];
-        }
-        this.showAnalyzeModal = true;
-        console.log('Impacted Files', res);
+    // For now use a mocked analyzer response (so UI demonstrates the Analyze modal immediately)
+    this.isLoading = false;
+    this.isBlockingUI = false;
+    const mockAnalyzeResponse: any[] = [
+      {
+        "changedMember": "calculateDiscount",
+        "memberType": "METHOD",
+        "riskScore": 9,
+        "summaryReasoning": "Step 1: Analyze Contractual Change in Module A. The `calculateDiscount` method in `PricingUtility` has changed its return type from `double` to `BigDecimal`.",
+        "testStrategy": {
+          "scope": "Modules impacted by the `calculateDiscount` return type change (from double to BigDecimal), focusing on compilation fixes, runtime null-safety, and precision validation.",
+          "priority": "HIGH",
+          "testCasesRequired": [
+            {
+              "moduleName": "com.consumer.AuditService",
+              "testType": "Unit/Integration Test",
+              "focus": "Verify `printTaxAndInvoiceInfo` compiles after fixing the `BigDecimal` to `double` conversion. Validate the precision of the `calculateDiscount` result when converted back to `double` for audit checks."
+            },
+            {
+              "moduleName": "com.app.order.OrderProcessor",
+              "testType": "Unit/Integration Test",
+              "focus": "Verify `processOrder` compiles after fixing the `BigDecimal` to `double` conversion. Validate the accuracy of the `appliedDiscount` and the final `total - appliedDiscount` calculation, ensuring no unexpected precision loss."
+            },
+            {
+              "moduleName": "com.app.analytics.AnalyticsEngine",
+              "testType": "Unit/Integration Test",
+              "focus": "Verify `logDiscount` correctly handles the `BigDecimal` return type, specifically testing scenarios where `calculateDiscount` might theoretically return `null` (if applicable) to ensure `NullPointerException` is avoided. Validate the precision of the logged discount value."
+            }
+          ]
+        },
+        "actionableImpacts": [
+          {
+            "moduleName": "com.consumer.AuditService",
+            "impactType": "SYNTACTIC_BREAK",
+            "issue": "The `printTaxAndInvoiceInfo` method calls `pricingUtility.calculateDiscount` which now returns `BigDecimal`."
+          },
+          {
+            "moduleName": "com.app.order.OrderProcessor",
+            "impactType": "SYNTACTIC_BREAK",
+            "issue": "The `processOrder` method calls `pricing.calculateDiscount` which now returns `BigDecimal`."
+          },
+          {
+            "moduleName": "com.app.analytics.AnalyticsEngine",
+            "impactType": "RUNTIME_RISK",
+            "issue": "The `logDiscount` method now correctly handles the `BigDecimal` return type."
+          }
+        ]
       },
-      error: (err) => {
-        this.isLoading = false;
-        this.isBlockingUI = false;
-        this.analyzeResult = { error: true, message: 'Failed to call analyze API', detail: err, payload };
-        this.analyzeTreeData = [];
-        this.showAnalyzeModal = true;
-        console.error('Analyze failed', err);
+      {
+        "changedMember": "getTaxRate",
+        "memberType": "METHOD",
+        "riskScore": 8,
+        "summaryReasoning": "The `getTaxRate()` method in `PricingUtility` (Module A) has been modified.",
+        "testStrategy": {
+          "scope": "Modules directly consuming the `getTaxRate()` method, focusing on validating the new tax rate's effect on calculations and reporting.",
+          "priority": "HIGH",
+          "testCasesRequired": [
+            {
+              "moduleName": "com.app.invoicing.InvoiceGenerator",
+              "testType": "Unit/Integration Test",
+              "focus": "Verify `calculateTotalWithTax` uses the new tax rate (e.g., 8%) correctly and produces the expected total. Test with various subtotals."
+            },
+            {
+              "moduleName": "com.consumer.AuditService",
+              "testType": "Integration Test",
+              "focus": "Verify `printTaxAndInvoiceInfo` correctly reflects the new tax rate in its output and that the `totalWithTax` reported matches the new calculation from `InvoiceGenerator`. Ensure audit logs reflect the updated rate."
+            }
+          ]
+        },
+        "actionableImpacts": [
+          {
+            "moduleName": "com.app.invoicing.InvoiceGenerator",
+            "impactType": "SEMANTIC_BREAK",
+            "issue": "The `calculateTotalWithTax` method will now use the new tax rate returned by `PricingUtility.getTaxRate()`."
+          },
+          {
+            "moduleName": "com.consumer.AuditService",
+            "impactType": "SEMANTIC_BREAK",
+            "issue": "The `printTaxAndInvoiceInfo` method retrieves and prints the tax rate from `PricingUtility.getTaxRate()`."
+          }
+        ]
+      },
+      {
+        "changedMember": "TAX_RATE",
+        "memberType": "FIELD/CONSTANT",
+        "riskScore": 8,
+        "summaryReasoning": "Step 1: Analyze Contractual Change in Module A: The diff indicates a FIELD_MODIFIED for 'TAX_RATE'. The old declaration was 'private static final double TAX_RATE = 0.05;' and the new declaration is 'private static final double TAX_RATE = 0.08;'.",
+        "testStrategy": {
+          "scope": "Comprehensive validation of all tax-related calculations within Module A. This includes unit tests for methods directly using 'TAX_RATE' and integration tests for public APIs that expose tax-dependent results.",
+          "priority": "HIGH",
+          "testCasesRequired": [
+            {
+              "moduleName": "com.app.modulea.TaxCalculator",
+              "testType": "Unit/Integration",
+              "focus": "Verify all tax calculations correctly reflect the new 8% tax rate, ensuring no regressions and correct application of the updated business logic."
+            }
+          ]
+        },
+        "actionableImpacts": [
+          {
+            "moduleName": "com.app.modulea.TaxCalculator",
+            "impactType": "SEMANTIC_BREAK",
+            "issue": "The private static final TAX_RATE constant has changed from 0.05 to 0.08."
+          }
+        ]
+      },
+      {
+        "changedMember": "PricingUtility",
+        "memberType": "CLASS/TYPE",
+        "riskScore": 9,
+        "summaryReasoning": "1. Analyze Contractual Change in Module A (PricingUtility): The PricingUtility class has been modified.",
+        "testStrategy": {
+          "scope": "Comprehensive testing is required for modules directly impacted by syntactic breaks, semantic changes, and new runtime risks.",
+          "priority": "HIGH",
+          "testCasesRequired": [
+            {
+              "moduleName": "com.app.order.OrderProcessor",
+              "testType": "Unit/Integration",
+              "focus": "Verify successful compilation and correct discount application after fixing the BigDecimal to double conversion."
+            },
+            {
+              "moduleName": "com.app.invoicing.InvoiceGenerator",
+              "testType": "Unit/Integration",
+              "focus": "Validate calculateTotalWithTax correctly applies the new 8% tax rate and that the business logic aligns with the updated tax policy."
+            },
+            {
+              "moduleName": "com.app.analytics.AnalyticsEngine",
+              "testType": "Unit/Integration/Negative",
+              "focus": "Verify logDiscount correctly handles BigDecimal values, including precision, rounding, and robustly handles potential null returns from calculateDiscount (if applicable)."
+            },
+            {
+              "moduleName": "PricingUtility",
+              "testType": "Unit",
+              "focus": "Verify calculateDiscount returns BigDecimal with expected precision and rounding."
+            },
+            {
+              "moduleName": "PricingUtility",
+              "testType": "Unit",
+              "focus": "Verify getTaxRate returns 0.08."
+            },
+            {
+              "moduleName": "PricingUtility",
+              "testType": "Integration",
+              "focus": "Ensure the removal of getProductCodePrefix has no unintended side effects on the overall system."
+            }
+          ]
+        },
+        "actionableImpacts": [
+          {
+            "moduleName": "com.app.order.OrderProcessor",
+            "impactType": "SYNTACTIC_BREAK",
+            "issue": "The calculateDiscount method in PricingUtility now returns BigDecimal instead of double."
+          },
+          {
+            "moduleName": "com.app.invoicing.InvoiceGenerator",
+            "impactType": "SEMANTIC_BREAK",
+            "issue": "The TAX_RATE constant in PricingUtility has changed from 0.05 to 0.08."
+          },
+          {
+            "moduleName": "com.app.analytics.AnalyticsEngine",
+            "impactType": "RUNTIME_RISK",
+            "issue": "The calculateDiscount method now returns a BigDecimal object instead of a primitive double."
+          },
+          {
+            "moduleName": "PricingUtility",
+            "impactType": "NO_IMPACT",
+            "issue": "The getProductCodePrefix method was removed as it was identified as dead code."
+          }
+        ]
+      },
+      {
+        "changedMember": "PricingUtility.java",
+        "memberType": "METHOD",
+        "riskScore": 1,
+        "summaryReasoning": "Step 1: Analyze Contractual Change in Module A. The change involves the removal of the public method `getProductCodePrefix()`.",
+        "testStrategy": {
+          "scope": "Regression testing for the module where the dead code was removed and general integration tests to ensure no unforeseen side effects.",
+          "priority": "LOW",
+          "testCasesRequired": [
+            {
+              "moduleName": "com.app.modulea.ProductService",
+              "testType": "Integration Test",
+              "focus": "Verify existing functionality of the ProductService module remains intact after dead code removal."
+            },
+            {
+              "moduleName": "All",
+              "testType": "System/Regression Test",
+              "focus": "Ensure no hidden dependencies or unexpected runtime issues arise from the removal of the `getProductCodePrefix` method."
+            }
+          ]
+        },
+        "actionableImpacts": [
+          {
+            "moduleName": "com.app.modulea.ProductService",
+            "impactType": "NO_IMPACT",
+            "issue": "The method `getProductCodePrefix()` was removed from this module."
+          }
+        ]
       }
-    });
+    ];
+
+    // use the mock response to populate analyzeResult and the tree
+    this.analyzeResult = mockAnalyzeResponse;
+    try {
+      this.analyzeTreeData = this.buildAnalyzeTreeFromActionableImpacts(mockAnalyzeResponse);
+    } catch (e) {
+      this.analyzeTreeData = [];
+    }
+    this.showAnalyzeModal = true;
+    console.log('Impacted Files (mock)', mockAnalyzeResponse);
   }
 
   // Build an analyze tree grouped by project name (from sessionStorage.reposData.details)
@@ -871,6 +1053,68 @@ export class LandingComponent implements OnInit {
         curChildren.push({ name: fileName, type: 'file' });
       }
       out.push({ name, children: rootChildren });
+    }
+
+    return out;
+  }
+
+  // Build analyze tree from the newer analyzer response shape that contains actionableImpacts
+  private buildAnalyzeTreeFromActionableImpacts(respArray: any[]): Array<{ name: string; children?: any[]; key?: string; count?: number }> {
+    const out: any[] = [];
+    if (!Array.isArray(respArray) || respArray.length === 0) return out;
+
+    // load cached repos data
+    let reposData: any = null;
+    try { reposData = JSON.parse(sessionStorage.getItem('reposData') || 'null'); } catch (e) { reposData = null; }
+    const details = reposData?.details ?? reposData?.detail ?? {};
+
+    // helper: find repo id for a class full name (e.g. com.app.module.ClassName)
+    const findRepoForClass = (classFullName: string): string | null => {
+      if (!classFullName) return null;
+      const parts = classFullName.split('.').filter(Boolean);
+      const classFile = parts[parts.length - 1] + '.java';
+      for (const id of Object.keys(details || {})) {
+        const files = details[id]?.files ?? [];
+        try {
+          const found = this.searchFilesForPath(files, parts, classFile);
+          if (found) return id;
+        } catch (e) { /* ignore */ }
+      }
+      return null;
+    };
+
+    // aggregate impacts per repo -> class
+    const repoMap: Record<string, Record<string, any[]>> = {};
+
+    for (const item of respArray) {
+      const impacts = Array.isArray(item.actionableImpacts) ? item.actionableImpacts : [];
+      for (const imp of impacts) {
+        const classFull = imp.moduleName || imp.module || imp.module_full_name || imp.name || '';
+        if (!classFull) continue;
+        const repoId = findRepoForClass(classFull) || 'unknown';
+        repoMap[repoId] = repoMap[repoId] || {};
+        repoMap[repoId][classFull] = repoMap[repoId][classFull] || [];
+        repoMap[repoId][classFull].push(imp);
+      }
+    }
+
+    for (const repoId of Object.keys(repoMap)) {
+      const projName = (details[repoId]?.name) || (repoId === 'unknown' ? 'Unknown Project' : `Repo ${repoId}`);
+      const classMap = repoMap[repoId];
+      const classChildren: any[] = [];
+      for (const classFull of Object.keys(classMap)) {
+        const impacts = classMap[classFull] || [];
+        const parts = classFull.split('.').filter(Boolean);
+        const classSimple = parts.length ? parts[parts.length - 1] : classFull;
+        const fileName = classSimple + '.java';
+        // impact nodes under this class
+        const impactNodes = impacts.map((im: any, idx: number) => {
+          const title = `${String(im.impactType ?? im.type ?? 'IMPACT').toUpperCase()} — ${String(im.issue ?? im.description ?? im.summary ?? '')}`.trim();
+          return { name: title, key: `${repoId}/${classFull}/impact-${idx}`, impact: im };
+        });
+        classChildren.push({ name: fileName, key: `${repoId}/${classFull}`, children: impactNodes, count: impactNodes.length });
+      }
+      out.push({ name: projName, key: `proj-${repoId}`, children: classChildren, count: classChildren.reduce((s, c) => s + (c.count || 0), 0) });
     }
 
     return out;
